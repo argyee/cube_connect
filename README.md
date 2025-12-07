@@ -1,6 +1,6 @@
 # Cube Connect
 
-A 3-player multiplayer strategy board game built with React, Node.js, and Socket.IO.
+A multi-player strategy board game built with React, Node.js, and Socket.IO.
 
 ## Overview
 
