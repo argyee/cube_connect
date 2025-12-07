@@ -1,0 +1,33 @@
+{
+  "name": "cube-connect",
+  "version": "1.0.0",
+  "description": "A 3-player strategy board game with online multiplayer",
+  "scripts": {
+    "install:all": "npm install --prefix client && npm install --prefix server",
+    "dev:client": "npm run dev --prefix client",
+    "dev:server": "npm run dev --prefix server",
+    "build:client": "npm run build --prefix client",
+    "start:server": "npm start --prefix server",
+    "docker:build": "docker build -t cube-connect:latest .",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "docker:logs": "docker logs -f cube-connect",
+    "docker:restart": "docker-compose restart"
+  },
+  "keywords": [
+    "game",
+    "multiplayer",
+    "board-game",
+    "react",
+    "socketio"
+  ],
+  "author": "",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourorg/cube-connect.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yourorg/cube-connect/issues"
+  },
+  "license": "MIT"
+}

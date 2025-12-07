@@ -1,0 +1,38 @@
+# Node
+node_modules/
+logs/
+.env
+.env.*
+.DS_Store
+*.log
+
+# Build
+client/dist/
+server/logs/
+client/.vite/
+
+# OS
+BUG_FIXES_TODO.md
+*.todo
+Thumbs.db
+*.pid
+*.pid.lock
+
+# IDE
+.vscode/
+.idea/
+agents
+.vercel/
+
+# Docker overrides
+docker-compose.override.yml
+
+# Test
+coverage/
+
+# Temporary files
+*.tmp
+*.swp
+
+# ESLint cache
+.eslintcache
