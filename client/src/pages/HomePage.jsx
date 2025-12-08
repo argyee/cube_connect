@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useGame } from '../context/GameContext';
+import { useGame } from '../context/useGame';
 import { PLAYERS_CONFIG, WIN_CONDITIONS, MIN_PLAYERS, MAX_PLAYERS, RECOMMENDED_CUBES } from '../utils/constants';
 import PlayerSetup from '../components/PlayerSetup';
 import { Users, Box } from 'lucide-react';

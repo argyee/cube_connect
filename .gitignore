@@ -23,6 +23,8 @@ Thumbs.db
 .idea/
 agents
 .vercel/
+.run/
+
 
 # Docker overrides
 docker-compose.override.yml

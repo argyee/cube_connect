@@ -1,5 +1,6 @@
-import { nanoid } from 'nanoid';
 import logger from '../utils/logger.js';
+import { customAlphabet } from 'nanoid';
+import { hexadecimalUppercase } from 'nanoid-dictionary';
 
 const PLAYER_COLORS = [
   '#3b82f6', // Blue
@@ -39,9 +40,10 @@ class RoomManager {
   }
 
   generateRoomCode() {
+    const customNanoid = customAlphabet(hexadecimalUppercase, 6); // 6-character code using 0-9, A-F
     let code;
     do {
-      code = nanoid(6).toUpperCase();
+      code = customNanoid();
     } while (this.rooms.has(code));
     return code;
   }

@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { useGame } from '../context/GameContext';
+import { useGame } from '../context/useGame';
 import Game from '../components/Game';
 import { loadGameState, loadRoomSession } from '../utils/sessionStorage';
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useGame } from '../context/GameContext';
+import { useGame } from '../context/useGame';
 import GameBoard from './GameBoard';
 import PlayerStatus from './PlayerStatus';
 import GameControls from './GameControls';

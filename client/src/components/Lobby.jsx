@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useGame } from '../context/GameContext';
+import { useGame } from '../context/useGame';
 import { Users, Copy, CheckCircle, Settings } from 'lucide-react';
 import { PLAYER_COLORS, MIN_PLAYERS } from '../utils/constants';
 import { clearRoomSession } from '../utils/sessionStorage';

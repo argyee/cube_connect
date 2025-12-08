@@ -29,5 +29,7 @@
   "bugs": {
     "url": "https://github.com/yourorg/cube-connect/issues"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+  }
 }

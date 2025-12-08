@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { useGame } from '../context/GameContext';
+import { useGame } from '../context/useGame';
 import Lobby from '../components/Lobby';
 import { loadRoomSession, saveRoomSession, clearRoomSession } from '../utils/sessionStorage';
 import logger from '../utils/logger';

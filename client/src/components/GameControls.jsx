@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { RotateCw, Eye, EyeOff, Timer, MousePointer, Settings } from 'lucide-react';
-import { useGame } from '../context/GameContext';
+import { useGame } from '../context/useGame';
 
 const GameControls = ({ onReset, onRandomBoard, onLeaveGame, debugMode, isOnlineMode }) => {
   const {

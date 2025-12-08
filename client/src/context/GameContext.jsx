@@ -1,5 +1,5 @@
-import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useContext, useState, useEffect, useRef } from 'react';
+import { BrowserRouter, useNavigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import { PLAYERS_CONFIG, INITIAL_CUBES, WIN_CONDITIONS } from '../utils/constants.js';
 import { 
@@ -11,18 +11,12 @@ import {
   clearGameState 
 } from '../utils/sessionStorage.js';
 import logger from '../utils/logger.js';
-
-const GameContext = createContext();
-
-export const useGame = () => {
-  const context = useContext(GameContext);
-  if (!context) {
-    throw new Error('useGame must be used within GameProvider');
-  }
-  return context;
-};
+import App from "../App";
+import { GameContext } from './useGame.js';
 
 export const GameProvider = ({ children }) => {
+  const navigate = useNavigate();
+
   // Game state
   const [board, setBoard] = useState({});
   const [currentPlayer, setCurrentPlayer] = useState(0);
@@ -406,6 +400,15 @@ export const GameProvider = ({ children }) => {
     };
   }, []);
 
+  useEffect(() => {
+    if (socket) {
+      socket.on('disconnect', () => {
+        // Redirect to home page on disconnect
+        navigate('/');
+      });
+    }
+  }, [socket, navigate]);
+
   // Socket actions
   const connectSocket = () => {
     return new Promise((resolve, reject) => {
@@ -752,3 +755,13 @@ export const GameProvider = ({ children }) => {
 
   return <GameContext.Provider value={value}>{children}</GameContext.Provider>;
 };
+
+const AppWrapper = () => (
+  <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+    <GameProvider>
+      <App />
+    </GameProvider>
+  </BrowserRouter>
+);
+
+export default AppWrapper;
