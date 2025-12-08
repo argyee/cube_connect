@@ -46,7 +46,6 @@ export const GameProvider = ({ children }) => {
   const [isConnected, setIsConnected] = useState(false);
   const [connectionError, setConnectionError] = useState('');
 
-  // Refs to hold latest values for use in socket event handlers (avoid stale closures)
   // UI state
   const [gameStarted, setGameStarted] = useState(false);
   const [debugMode, setDebugMode] = useState(false);
@@ -60,8 +59,6 @@ export const GameProvider = ({ children }) => {
   const roomCubesPerPlayerRef = useRef(roomCubesPerPlayer);
   const winConditionRef = useRef(winCondition);
   const isInRoomRef = useRef(isInRoom);
-
-
   const gameStartedRef = useRef(gameStarted);
 
   // Game options/settings

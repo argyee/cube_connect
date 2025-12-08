@@ -208,6 +208,11 @@ class RoomManager {
     const roomDisconnects = this.disconnectedPlayers.get(roomCode);
     if (roomDisconnects && roomDisconnects[playerSlot]) {
       delete roomDisconnects[playerSlot];
+      
+      // If no more disconnected players for this room, clean up the map entry
+      if (Object.keys(roomDisconnects).length === 0) {
+        this.disconnectedPlayers.delete(roomCode);
+      }
     }
 
     // Delete room if all players have disconnected
@@ -250,6 +255,11 @@ class RoomManager {
 
     // Clean up disconnect tracking
     delete roomDisconnects[playerSlot];
+    
+    // If no more disconnected players for this room, clean up the map entry
+    if (Object.keys(roomDisconnects).length === 0) {
+      this.disconnectedPlayers.delete(roomCode);
+    }
 
     this.playerRooms.set(socketId, roomCode);
 
@@ -349,6 +359,11 @@ class RoomManager {
     const now = Date.now();
     for (const [code, room] of this.rooms.entries()) {
       if (!room.started && now - room.createdAt > maxAge) {
+        // Clear any pending deletion timer for this room
+        if (this.roomDeletionTimers.has(code)) {
+          clearTimeout(this.roomDeletionTimers.get(code));
+          this.roomDeletionTimers.delete(code);
+        }
         // Remove all players from this room
         room.players.forEach(p => this.playerRooms.delete(p.socketId));
         this.rooms.delete(code);
