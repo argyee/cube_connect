@@ -4,9 +4,14 @@ import roomManager from '../src/services/roomManager.js';
 
 // Helper to reset singleton state between tests
 const resetState = () => {
+  // Clear any pending deletion timers
+  for (const timeout of roomManager.roomDeletionTimers.values()) {
+    clearTimeout(timeout);
+  }
   roomManager.rooms.clear();
   roomManager.playerRooms.clear();
   roomManager.disconnectedPlayers.clear();
+  roomManager.roomDeletionTimers.clear();
 };
 
 test('reindexes player slots after pre-start leave', () => {
@@ -46,11 +51,49 @@ test('clears disconnectedPlayers when deleting empty room (pre-start)', () => {
   roomManager.disconnectedPlayers.set(rcode, { 0: { socketId: 'x' } });
   assert.strictEqual(roomManager.disconnectedPlayers.has(rcode), true);
 
-  // Join a single player then have them leave pre-start which should delete the room
+  // Join a single player then have them leave pre-start
   roomManager.joinRoom(rcode, 'solo', 'Solo');
   const res = roomManager.leaveRoom('solo');
-  assert.strictEqual(res.roomDeleted, true);
+  
+  // With the new grace period implementation, room is not deleted immediately
+  assert.strictEqual(res.roomDeleted, false);
+  assert.strictEqual(res.deletionScheduled, true);
+  
+  // Room should still exist
+  assert.strictEqual(roomManager.rooms.has(rcode), true);
+  
+  // disconnectedPlayers should still have an entry since room hasn't been deleted yet
+  assert.strictEqual(roomManager.disconnectedPlayers.has(rcode), true);
+  
+  // Clean up the scheduled deletion timer
+  if (roomManager.roomDeletionTimers.has(rcode)) {
+    clearTimeout(roomManager.roomDeletionTimers.get(rcode));
+    roomManager.roomDeletionTimers.delete(rcode);
+  }
+});
 
-  // disconnectedPlayers should no longer have an entry for this room
-  assert.strictEqual(roomManager.disconnectedPlayers.has(rcode), false);
+test('cleans up disconnectedPlayers map entry when last disconnected player reconnects', () => {
+  resetState();
+  const room = roomManager.createRoom(4, 3, 14);
+  roomManager.joinRoom(room.code, 's1', 'P1');
+  roomManager.joinRoom(room.code, 's2', 'P2');
+  roomManager.joinRoom(room.code, 's3', 'P3');
+  
+  // Start the game
+  roomManager.startGame(room.code);
+  
+  // Player 0 disconnects (triggers grace period)
+  roomManager.leaveRoom('s1');
+  
+  // disconnectedPlayers should have an entry for this room
+  assert.strictEqual(roomManager.disconnectedPlayers.has(room.code), true);
+  const disconnects = roomManager.disconnectedPlayers.get(room.code);
+  assert.strictEqual(disconnects[0] !== undefined, true);
+  
+  // Player 0 reconnects
+  const reconnectResult = roomManager.reconnectPlayer(room.code, 's1-new', 0);
+  assert.strictEqual(reconnectResult.success, true);
+  
+  // disconnectedPlayers entry for this room should be cleaned up
+  assert.strictEqual(roomManager.disconnectedPlayers.has(room.code), false);
 });
