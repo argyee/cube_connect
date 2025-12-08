@@ -214,11 +214,23 @@ const handleMovementMove = (gameState, key, playerId, selectedCube, socket) => {
       return { valid: false };
     }
 
+    // Check if destination touches an existing cube (after removing the selected cube)
+    const tempBoard = { ...gameState.board };
+    delete tempBoard[selectedCube];
+    const { row, col } = parseCubeKey(key);
+    
+    // If there are other cubes on the board, the new position must touch one
+    if (Object.keys(tempBoard).length > 0 && !touchesAnyCube(row, col, tempBoard)) {
+      socket.emit('invalidMove', {
+        message: 'Must touch an existing cube (horizontally or vertically)'
+      });
+      return { valid: false };
+    }
+
     const newBoard = { ...gameState.board };
     delete newBoard[selectedCube];
     newBoard[key] = playerId;
 
-    const { row, col } = parseCubeKey(key);
     const hasWon = checkWin(row, col, playerId, newBoard, gameState.winCondition);
     const winner = hasWon ? gameState.players[gameState.currentPlayer] : null;
 
