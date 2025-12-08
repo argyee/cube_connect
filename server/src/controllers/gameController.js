@@ -214,10 +214,11 @@ const handleMovementMove = (gameState, key, playerId, selectedCube, socket) => {
       return { valid: false };
     }
 
+    const { row, col } = parseCubeKey(key);
+    
     // Check if destination touches an existing cube (after removing the selected cube)
     const tempBoard = { ...gameState.board };
     delete tempBoard[selectedCube];
-    const { row, col } = parseCubeKey(key);
     
     // If there are other cubes on the board, the new position must touch one
     if (Object.keys(tempBoard).length > 0 && !touchesAnyCube(row, col, tempBoard)) {
@@ -227,9 +228,8 @@ const handleMovementMove = (gameState, key, playerId, selectedCube, socket) => {
       return { valid: false };
     }
 
-    const newBoard = { ...gameState.board };
-    delete newBoard[selectedCube];
-    newBoard[key] = playerId;
+    // Create the final board state with the moved cube
+    const newBoard = { ...tempBoard, [key]: playerId };
 
     const hasWon = checkWin(row, col, playerId, newBoard, gameState.winCondition);
     const winner = hasWon ? gameState.players[gameState.currentPlayer] : null;
