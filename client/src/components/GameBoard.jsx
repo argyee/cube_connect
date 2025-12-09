@@ -115,7 +115,7 @@ const GameBoard = ({
               const playerId = board[key];
               const isSelected = selectedCube === key;
               const isDisconnected = disconnectedCubes.includes(key);
-              const player = playerId ? findPlayerById(playerId, players) : null;
+              const player = playerId !== undefined ? findPlayerById(playerId, players) : null;
               const isWinningCube = winningSet.has(key);
 
               // Check if any player's cursor is on this cell

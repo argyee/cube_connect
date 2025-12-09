@@ -2,39 +2,44 @@ import { getCubeKey, parseCubeKey, getAdjacentPositions } from './boardUtils.js'
 import logger from './logger.js';
 
 /**
- * Core BFS function to find all reachable cubes from a starting position
- * @param {string[]} targetCubes - Array of cube keys to check reachability for
+ * Find all connected components in the board after removing a cube
+ * Returns the smallest component(s) that would be disconnected
+ * @param {string[]} allCubes - All cube keys on the board
  * @param {Object} board - The current board state
- * @returns {Set} - Set of reachable target cube keys
+ * @returns {Set} - Set of cube keys that form isolated groups
  */
-const findReachableCubes = (targetCubes, board) => {
-  if (targetCubes.length === 0) return new Set();
-
+const findAllConnectedComponents = (allCubes, board) => {
   const visited = new Set();
-  const queue = [targetCubes[0]];
-  visited.add(targetCubes[0]);
-  const reachedTargets = new Set([targetCubes[0]]);
+  const components = []; // Array of Sets, each Set is a connected component
 
-  while (queue.length > 0) {
-    const current = queue.shift();
-    const { row, col } = parseCubeKey(current);
-    const adjacent = getAdjacentPositions(row, col);
+  for (const startCube of allCubes) {
+    if (visited.has(startCube)) continue;
 
-    for (const pos of adjacent) {
-      const key = getCubeKey(pos.row, pos.col);
-      // Traverse through ANY occupied square (any color)
-      if (board[key] && !visited.has(key)) {
-        visited.add(key);
-        queue.push(key);
-        // Track if it's one of our target cubes
-        if (targetCubes.includes(key)) {
-          reachedTargets.add(key);
+    // BFS from this cube
+    const queue = [startCube];
+    const component = new Set([startCube]);
+    visited.add(startCube);
+
+    while (queue.length > 0) {
+      const current = queue.shift();
+      const { row, col } = parseCubeKey(current);
+      const adjacent = getAdjacentPositions(row, col);
+
+      for (const pos of adjacent) {
+        const key = getCubeKey(pos.row, pos.col);
+        // Check if there's a cube at this position AND we haven't visited it
+        if (board[key] !== undefined && !visited.has(key)) {
+          visited.add(key);
+          component.add(key);
+          queue.push(key);
         }
       }
     }
+
+    components.push(component);
   }
 
-  return reachedTargets;
+  return components;
 };
 
 /**
@@ -51,22 +56,23 @@ export const canMoveCube = (cubeKey, playerId, board) => {
     const tempBoard = { ...board };
     delete tempBoard[cubeKey];
 
-    const allRemainingCubes = Object.keys(tempBoard);
+    // Filter to only this player's cubes
+    const playerCubes = Object.keys(tempBoard).filter(key => tempBoard[key] === playerId);
 
     // Empty or single cube is always connected
-    if (allRemainingCubes.length <= 1) return true;
+    if (playerCubes.length <= 1) return true;
 
-    // Check if ALL remaining cubes stay in one connected network
-    const reachableCubes = findReachableCubes(allRemainingCubes, tempBoard);
-    const canMove = reachableCubes.size === allRemainingCubes.length;
+    // Check if ALL of this player's remaining cubes stay in one connected network
+    const reachableCubes = findReachableCubes(playerCubes, tempBoard);
+    const canMove = reachableCubes.size === playerCubes.length;
     
     if (!canMove) {
-      logger.debug(`Move rejected: cube ${cubeKey} would break board connectivity (reachable: ${reachableCubes.size}, total: ${allRemainingCubes.length})`);
+      logger.debug('Connectivity', 'Move rejected - would break player connectivity', { cubeKey, playerId, reachable: reachableCubes.size, total: playerCubes.length });
     }
     
     return canMove;
   } catch (error) {
-    logger.error('Error checking cube move connectivity', { cubeKey, playerId, error: error.message });
+    logger.error('Connectivity', 'Error checking cube move connectivity', { cubeKey, playerId, error: error.message });
     return false;
   }
 };
@@ -89,12 +95,34 @@ export const getDisconnectedCubes = (cubeKey, playerId, board) => {
 
   if (allRemainingCubes.length <= 1) return [];
 
-  // Find the main connected component
-  const reachableFromFirst = findReachableCubes(allRemainingCubes, tempBoard);
+  logger.debug('Connectivity', 'Board state before removal', { 
+    totalCubes: Object.keys(board).length,
+    boardKeys: Object.keys(board).sort().join(', ')
+  });
 
-  // If all cubes are still connected, return empty array
-  if (reachableFromFirst.size === allRemainingCubes.length) return [];
+  // Find all connected components after removal
+  const components = findAllConnectedComponents(allRemainingCubes, tempBoard);
 
-  // Return the cubes that are NOT in the main connected component
-  return allRemainingCubes.filter(cube => !reachableFromFirst.has(cube));
+  logger.debug('Connectivity', 'getDisconnectedCubes', { 
+    cubeKey, 
+    allCubes: allRemainingCubes.length, 
+    numComponents: components.length,
+    componentSizes: components.map(c => c.size).join(', ')
+  });
+
+  // If there's only 1 component, nothing is disconnected
+  if (components.length === 1) return [];
+
+  // Return all cubes from components that are NOT the largest
+  // (the largest is the "main" group, smaller ones are "isolated")
+  let largestComponent = components[0];
+  for (const component of components) {
+    if (component.size > largestComponent.size) {
+      largestComponent = component;
+    }
+  }
+
+  const disconnected = allRemainingCubes.filter(cube => !largestComponent.has(cube));
+  logger.debug('Connectivity', 'Disconnected cubes found', { disconnected: disconnected.join(', ') });
+  return disconnected;
 };

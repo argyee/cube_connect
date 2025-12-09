@@ -124,10 +124,10 @@ export const generateRandomBoard = (winCondition, players = [], cubesPerPlayerOv
       };
     });
 
-    logger.debug(`Board generation complete: ${totalPlaced} cubes placed in ${globalAttempts} attempts (~${Math.round(targetFillRatio * 100)}% of available cubes per player)`);
+    logger.debug('BoardGeneration', 'Board generation complete', { totalPlaced, attempts: globalAttempts, fillRatio: `${Math.round(targetFillRatio * 100)}%` });
     return { board: newBoard, players: updatedPlayers };
   } catch (error) {
-    logger.error('Error generating random board', { winCondition, error: error.message });
+    logger.error('BoardGeneration', 'Error generating random board', { winCondition, error: error.message });
     return { board: {}, players: players && players.length > 0 ? players : PLAYERS_CONFIG };
   }
 };

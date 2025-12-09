@@ -38,3 +38,8 @@ coverage/
 
 # ESLint cache
 .eslintcache
+
+# Other
+Roadmap.md
+Code_review.md
+.github/copilot-instructions.md

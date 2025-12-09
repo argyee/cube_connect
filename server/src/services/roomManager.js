@@ -11,25 +11,23 @@ const PLAYER_COLORS = [
   '#ec4899'  // Pink
 ];
 
-const PLAYERS_CONFIG = [
-  { id: 1, name: 'Player 1', color: '#3b82f6' },
-  { id: 2, name: 'Player 2', color: '#ef4444' },
-  { id: 3, name: 'Player 3', color: '#22c55e' }
-];
-
 const MIN_PLAYERS = 2;
 const MAX_PLAYERS = 6;
 const INITIAL_CUBES = 14;
 
-// Generate players dynamically
-const generatePlayers = (count, names = [], cubesPerPlayer = INITIAL_CUBES) => {
-  return Array.from({ length: count }, (_, i) => ({
-    id: i + 1,
-    name: names[i] || `Player ${i + 1}`,
-    color: PLAYER_COLORS[i],
-    cubesLeft: cubesPerPlayer
-  }));
-};
+// Helper function to generate player objects for game state
+function generatePlayers(playerCount, playerNames, cubesPerPlayer) {
+  const players = [];
+  for (let i = 0; i < playerCount; i++) {
+    players.push({
+      id: i,
+      name: playerNames[i] || `Player ${i + 1}`,
+      color: PLAYER_COLORS[i % PLAYER_COLORS.length],
+      cubesLeft: cubesPerPlayer
+    });
+  }
+  return players;
+}
 
 class RoomManager {
   constructor() {

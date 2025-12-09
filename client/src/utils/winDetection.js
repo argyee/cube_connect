@@ -61,14 +61,14 @@ export const checkWin = (row, col, playerId, board, winCondition) => {
           winningLine.push(getCubeKey(row + dr * i, col + dc * i));
         }
 
-        logger.debug(`Win detected for player ${playerId} at (${row}, ${col}) with condition ${winCondition}`);
+        logger.debug('WinDetection', 'Win detected', { playerId, position: { row, col }, winCondition, lineLength: winningLine.length });
         return { isWin: true, winningLine };
       }
     }
 
     return { isWin: false, winningLine: [] };
   } catch (error) {
-    logger.error('Error checking win condition', { row, col, playerId, winCondition, error: error.message });
+    logger.error('WinDetection', 'Error checking win condition', { row, col, playerId, winCondition, error: error.message });
     return { isWin: false, winningLine: [] };
   }
 };

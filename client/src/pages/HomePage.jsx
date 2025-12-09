@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useGame } from '../context/useGame';
 import { PLAYERS_CONFIG, WIN_CONDITIONS, MIN_PLAYERS, MAX_PLAYERS, RECOMMENDED_CUBES } from '../utils/constants';
 import PlayerSetup from '../components/PlayerSetup';
 import { Users, Box } from 'lucide-react';
-import { loadRoomSession } from '../utils/sessionStorage';
+import { loadRoomSession, clearRoomSession } from '../utils/sessionStorage';
 import logger from '../utils/logger';
 import { toast } from 'react-toastify';
 
@@ -19,12 +19,17 @@ const HomePage = () => {
     createRoom,
     joinRoom,
     reconnectToGame,
+    connectSocket,
     connectionError,
     setConnectionError,
+    gameStarted,
     roomCode,
+    playerSlot,
     isInRoom,
-    isConnected
+    isConnected,
+    leaveRoom
   } = useGame();
+  const location = useLocation();
 
   const [mode, setMode] = useState('menu'); // 'menu', 'local-setup', 'online-setup', 'join-setup'
   const [joinCode, setJoinCode] = useState('');
@@ -59,22 +64,46 @@ const HomePage = () => {
       const session = loadRoomSession();
       if (session && session.roomCode) {
         setSavedRoomSession(session);
-        logger.info('✓ Saved room session found on menu load:', session);
+        logger.info('HomePage', 'Saved room session found on menu load', session);
         
-        // Auto-reconnect only if NOT an intentional leave and game was active
         if (!session.intentionalLeave && session.playerSlot !== null && session.playerSlot !== undefined) {
-          logger.info('Auto-reconnecting to active game:', {
+          logger.info('HomePage', 'Auto-reconnecting to active game', {
             roomCode: session.roomCode,
             playerSlot: session.playerSlot
           });
           handleAutoReconnect(session);
         }
       } else {
-        logger.warn('✗ No saved room session found (or expired)');
+        logger.debug('HomePage', 'No saved room session found (or expired)');
         setSavedRoomSession(null);
       }
     }
-  }, [mode]); // Re-check whenever mode changes (when returning to menu)
+  }, [mode]);
+
+  // When hitting home while still in a room, leave and clear pending auto-navigation
+  // Track if we were in a room on the previous render to detect intentional navigation back
+  const wasInRoomRef = useRef(false);
+  const isCreatingRoomRef = useRef(false);
+  
+  useEffect(() => {
+    // Only leave room if:
+    // 1. User is on homepage
+    // 2. User is in a room
+    // 3. User was in a room on previous render (not just joining)
+    // 4. User is not currently in the process of creating a room
+    if (location.pathname === '/' && isInRoom && wasInRoomRef.current && !isCreatingRoomRef.current) {
+      logger.warn('HomePage', 'User navigated back to home while in room. Leaving room', { roomCode });
+      leaveRoom();
+    }
+    wasInRoomRef.current = isInRoom;
+  }, [location.pathname, isInRoom, leaveRoom, roomCode]);
+
+  useEffect(() => {
+    if (mode === 'online-setup' && isInRoom && roomCode && savedRoomSession?.roomCode !== roomCode) {
+      logger.info('HomePage', 'New room created, clearing stale saved session', { oldRoom: savedRoomSession?.roomCode, newRoom: roomCode });
+      setSavedRoomSession(null);
+    }
+  }, [isInRoom, roomCode, mode, savedRoomSession]);
 
   const handleAutoReconnect = async (session) => {
     setIsConnecting(true);
@@ -84,12 +113,11 @@ const HomePage = () => {
     }, 5000);
 
     try {
-      // Connect socket first before attempting reconnect
       await connectSocket();
       await reconnectToGame(session.roomCode, session.playerSlot);
       toast.success(`Reconnecting to game in room ${session.roomCode}...`);
     } catch (error) {
-      logger.error('Auto-reconnect failed:', error);
+      logger.error('HomePage', 'Auto-reconnect failed', error);
       toast.error('Could not reconnect to game. Please rejoin manually.');
     } finally {
       clearTimeout(timeoutId);
@@ -98,49 +126,81 @@ const HomePage = () => {
     }
   };
 
-  // Also reload saved session when isInRoom becomes false (i.e., when leaving a room)
   useEffect(() => {
     if (!isInRoom) {
-      logger.info('Player left room, checking for saved session...');
+      logger.debug('HomePage', 'isInRoom=false, reloading saved session');
       const session = loadRoomSession();
       
       if (session && session.roomCode) {
         setSavedRoomSession(session);
-        logger.info('✓ Loaded saved room session after leaving room:', session);
+        logger.info('HomePage', 'Loaded saved session', { room: session.roomCode, slot: session.playerSlot, intentionalLeave: session.intentionalLeave });
         
-        // Auto-reconnect only if NOT an intentional leave and game was active
         if (!session.intentionalLeave && session.playerSlot !== null && session.playerSlot !== undefined) {
-          logger.info('Auto-reconnecting to active game after accidental disconnect:', {
+          logger.info('HomePage', 'Auto-reconnecting to active game after accidental disconnect', {
             roomCode: session.roomCode,
             playerSlot: session.playerSlot
           });
           handleAutoReconnect(session);
         } else if (session.intentionalLeave) {
-          // Intentional leave - keep session for manual rejoin button, but clear the flag
-          logger.info('Intentional leave detected. Keeping session for manual rejoin.');
+          logger.info('HomePage', 'Intentional leave detected. Keeping session for manual rejoin');
           const sessionForRejoin = { ...session, intentionalLeave: false };
           setSavedRoomSession(sessionForRejoin);
         }
       } else {
-        logger.warn('✗ No saved session found after leaving room');
+        logger.warn('HomePage', 'No saved session found after leaving room');
         setSavedRoomSession(null);
       }
     }
   }, [isInRoom]);
 
-  // Navigate to lobby when room is created or joined, or to game if reconnecting to active game
   useEffect(() => {
+    logger.debug('HomePage', 'Navigation effect triggered', {
+      isInRoom,
+      roomCode,
+      savedCode: savedRoomSession?.roomCode,
+      savedSlot: savedRoomSession?.playerSlot,
+      gameStarted,
+      pathname: location.pathname,
+      isCreatingRoom: isCreatingRoomRef.current
+    });
+
+    // Don't auto-navigate if user is already on home page UNLESS they're creating/joining a room
+    if (location.pathname === '/' && !isCreatingRoomRef.current) {
+      logger.debug('HomePage', 'User is on homepage and not creating room, skipping auto-navigation');
+      return;
+    }
+
     if (isInRoom && roomCode) {
-      // If we have a saved session with a playerSlot, we're reconnecting to an active game
-      if (savedRoomSession && savedRoomSession.playerSlot !== null && savedRoomSession.playerSlot !== undefined) {
-        logger.info('Navigating to game (reconnecting to active game)');
+      // Reset the creating room flag once navigation is triggered
+      if (isCreatingRoomRef.current) {
+        logger.info('HomePage', 'Navigating away from homepage after room creation');
+        isCreatingRoomRef.current = false;
+      }
+
+      if (savedRoomSession && savedRoomSession.roomCode !== roomCode) {
+        logger.warn('HomePage', 'Stale session mismatch. Skipping redirect', { savedRoom: savedRoomSession.roomCode, currentRoom: roomCode });
+        return;
+      }
+
+      const sessionMatchesRoom = savedRoomSession && savedRoomSession.roomCode === roomCode;
+      const hasActiveGame = gameStarted || (sessionMatchesRoom && savedRoomSession.playerSlot !== null && savedRoomSession.playerSlot !== undefined);
+      logger.debug('HomePage', 'Route decision', {
+        sessionMatchesRoom,
+        hasActiveGame,
+        gameStarted,
+        target: hasActiveGame ? '/game' : `/lobby/${roomCode}`
+      });
+      if (hasActiveGame) {
+        logger.info('HomePage', 'Navigating to game (active game)', { roomCode, gameStarted });
         navigate('/game');
       } else {
-        logger.info('Navigating to lobby (joining/creating room)');
+        logger.info('HomePage', 'Navigating to lobby (new/rejoin lobby)', { roomCode, sessionMatchesRoom });
         navigate(`/lobby/${roomCode}`);
       }
+    } else {
+      logger.debug('HomePage', 'Navigation conditions unmet', { isInRoom, roomCode });
     }
-  }, [isInRoom, roomCode, savedRoomSession, navigate]);
+  }, [isInRoom, roomCode, savedRoomSession, gameStarted, navigate, location.pathname]);
 
   const handleStartLocal = (config) => {
     startLocalGame(config);
@@ -153,10 +213,15 @@ const HomePage = () => {
       return;
     }
     
+    // Clear any existing room session before creating new room
+    clearRoomSession();
+    setSavedRoomSession(null);
+    
+    logger.info('HomePage', 'Creating room', { maxPlayers, cubesPerPlayer, winCondition, playerName });
     setIsConnecting(true);
     setConnectionTimeout(false);
+    isCreatingRoomRef.current = true; // Mark that we're creating a room
     
-    // Set timeout warning after 5 seconds
     const timeoutId = setTimeout(() => {
       setConnectionTimeout(true);
       toast.info('Taking longer than expected to connect...');
@@ -164,19 +229,21 @@ const HomePage = () => {
 
     try {
       await createRoom(winCondition, maxPlayers, cubesPerPlayer, playerName || null);
-      // Navigation happens via useEffect watching isInRoom and roomCode
+      logger.info('HomePage', 'Room creation completed. Waiting for navigation effect', { isInRoom, roomCode });
+      // Navigation will happen via the navigation effect
     } catch (error) {
-      logger.error('Failed to create room:', error);
+      logger.error('HomePage', 'Failed to create room', error);
       toast.error('Failed to create room. Please try again.');
+      isCreatingRoomRef.current = false; // Reset on error
     } finally {
       clearTimeout(timeoutId);
       setIsConnecting(false);
       setConnectionTimeout(false);
+      // Keep isCreatingRoomRef true until after navigation completes
     }
   };
 
   const handleJoinRoom = async () => {
-    // Input validation
     if (!playerName.trim()) {
       toast.warning('Please enter a nickname');
       return;
@@ -187,10 +254,14 @@ const HomePage = () => {
       return;
     }
     
+    // Clear any existing room session before joining new room
+    clearRoomSession();
+    setSavedRoomSession(null);
+    
     setIsConnecting(true);
     setConnectionTimeout(false);
+    isCreatingRoomRef.current = true; // Mark that we're joining a room (same as creating)
     
-    // Set timeout warning after 5 seconds
     const timeoutId = setTimeout(() => {
       setConnectionTimeout(true);
       toast.info('Taking longer than expected to connect...');
@@ -198,14 +269,15 @@ const HomePage = () => {
 
     try {
       await joinRoom(joinCode.toUpperCase(), playerName || null);
-      // Navigation happens via useEffect watching isInRoom and roomCode
     } catch (error) {
-      logger.error('Failed to join room:', error);
+      logger.error('HomePage', 'Failed to join room', error);
       toast.error('Failed to join room. Please check the code and try again.');
+      isCreatingRoomRef.current = false; // Reset on error
     } finally {
       clearTimeout(timeoutId);
       setIsConnecting(false);
       setConnectionTimeout(false);
+      // Keep isCreatingRoomRef true until after navigation completes
     }
   };
 
@@ -224,36 +296,30 @@ const HomePage = () => {
     }, 5000);
 
     try {
-      // If we have a playerSlot, the game was in progress - use reconnect event
       if (savedRoomSession.playerSlot !== null && savedRoomSession.playerSlot !== undefined) {
-        logger.info('Attempting to reconnect to active game:', {
+        logger.info('HomePage', 'Attempting to reconnect to active game', {
           roomCode: savedRoomSession.roomCode,
           playerSlot: savedRoomSession.playerSlot
         });
-        // Connect socket first before attempting reconnect
         await connectSocket();
         await reconnectToGame(savedRoomSession.roomCode, savedRoomSession.playerSlot);
         toast.success(`Reconnecting to game in room ${savedRoomSession.roomCode}...`);
       } else {
-        // No playerSlot means it was a pre-game lobby - normal join
-        logger.info('Attempting to rejoin lobby:', {
+        logger.info('HomePage', 'Attempting to rejoin lobby', {
           roomCode: savedRoomSession.roomCode
         });
         const nameToUse = savedRoomSession.playerName || playerName || `Player ${Math.floor(Math.random() * 1000)}`;
         await joinRoom(savedRoomSession.roomCode, nameToUse);
         toast.success(`Rejoining room ${savedRoomSession.roomCode}...`);
       }
-      // Navigation happens via useEffect watching isInRoom and roomCode
     } catch (error) {
-      // Room no longer exists if all players have left - normal cleanup
       if (error.message.includes('no longer exists') || error.message.includes('not found')) {
-        logger.info('Room expired (all players left). Clearing saved session.');
+        logger.info('HomePage', 'Room expired (all players left). Clearing saved session');
         setSavedRoomSession(null);
         toast.info('That game has ended. Start a new game or join another room.');
       } else {
-        logger.error('Failed to rejoin room:', error);
+        logger.error('HomePage', 'Failed to rejoin room', error);
         toast.error('Could not rejoin. Please create or join a different room.');
-        // Don't clear savedRoomSession on other errors - let user retry or manually rejoin
       }
     } finally {
       clearTimeout(timeoutId);
@@ -281,7 +347,10 @@ const HomePage = () => {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-slate-900 to-slate-800 p-4" role="main">
         <div className="bg-white rounded-lg shadow-2xl p-8 max-w-md w-full">
-          <h1 className="text-3xl font-bold text-center mb-4 text-slate-800">
+          <div className="flex justify-center -mb-4">
+            <img src="/favicon.png" alt="Cube Connect" className="w-40 h-40" />
+          </div>
+          <h1 className="text-3xl font-bold text-center mb-2 text-slate-800">
             Cube Connect
           </h1>
           <p className="text-slate-600 mb-6 text-center text-sm">
@@ -291,21 +360,21 @@ const HomePage = () => {
           <div className="space-y-3 mb-6">
             <button
               onClick={() => setMode('local-setup')}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2"
+              className="w-full font-bold text-lg py-4 px-7 rounded-xl bg-blue-500 hover:bg-blue-700 text-white border-2 border-blue-700 shadow-lg focus:outline-none focus:ring-4 focus:ring-yellow-300 focus:ring-offset-2 transition-all"
               aria-label="Play a game locally on this device"
             >
               Play Locally
             </button>
             <button
               onClick={() => setMode('online-setup')}
-              className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-6 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-green-400 focus:ring-offset-2"
+              className="w-full font-bold text-lg py-4 px-7 rounded-xl bg-green-500 hover:bg-green-700 text-white border-2 border-green-700 shadow-lg focus:outline-none focus:ring-4 focus:ring-yellow-300 focus:ring-offset-2 transition-all"
               aria-label="Create a multiplayer online room"
             >
               Create Online Room
             </button>
             <button
               onClick={() => setMode('join-setup')}
-              className="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-3 px-6 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-purple-400 focus:ring-offset-2"
+              className="w-full font-bold text-lg py-4 px-7 rounded-xl bg-purple-500 hover:bg-purple-700 text-white border-2 border-purple-700 shadow-lg focus:outline-none focus:ring-4 focus:ring-yellow-300 focus:ring-offset-2 transition-all"
               aria-label="Join an existing multiplayer online room"
             >
               Join Room
@@ -314,7 +383,7 @@ const HomePage = () => {
               <button
                 onClick={handleRejoinRoom}
                 disabled={isConnecting}
-                className="w-full bg-amber-600 hover:bg-amber-700 disabled:bg-amber-400 text-white font-semibold py-3 px-6 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-amber-400 focus:ring-offset-2"
+                className="w-full font-bold text-lg py-4 px-7 rounded-xl bg-amber-400 hover:bg-amber-500 text-white border-2 border-amber-500 shadow-lg focus:outline-none focus:ring-4 focus:ring-yellow-300 focus:ring-offset-2 transition-all"
                 aria-label={`Rejoin previously played room ${savedRoomSession.roomCode}`}
               >
                 {isConnecting ? 'Rejoining...' : `Rejoin Last Room (${savedRoomSession.roomCode})`}

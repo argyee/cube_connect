@@ -60,12 +60,25 @@ app.use(express.json());
 const clientDistPath = path.join(__dirname, '../client/dist');
 app.use(express.static(clientDistPath));
 
-// SPA fallback: serve index.html for all non-API routes
-app.get('/', (req, res) => {
-  res.sendFile(path.join(clientDistPath, 'index.html'));
+// Health check endpoint (before SPA fallback)
+app.get('/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    activeRooms: roomManager.rooms.size,
+    timestamp: new Date().toISOString()
+  });
 });
 
-app.get('/spa-route-*', (req, res) => {
+// Client log forwarding endpoint (optional, rate-limited in production)
+app.post('/api/logs', (req, res) => {
+  const { level, message, meta } = req.body;
+  logger.info(`[CLIENT] ${level}: ${message}`, meta);
+  res.status(200).json({ received: true });
+});
+
+// SPA fallback: serve index.html for all remaining routes
+// This MUST be last, after all API routes
+app.get('*', (req, res) => {
   res.sendFile(path.join(clientDistPath, 'index.html'));
 });
 
@@ -76,15 +89,6 @@ const io = new Server(httpServer, {
     methods: ['GET', 'POST'],
     credentials: true
   }
-});
-
-// Health check endpoint
-app.get('/health', (req, res) => {
-  res.json({
-    status: 'ok',
-    activeRooms: roomManager.rooms.size,
-    timestamp: new Date().toISOString()
-  });
 });
 
 // Socket.IO event handlers
@@ -172,12 +176,14 @@ io.on('connection', (socket) => {
     const playerSlot = room.players.findIndex(p => p?.socketId === socket.id);
     if (playerSlot === -1) return;
 
-    logger.debug(`Emote sent: player ${playerSlot} sent ${emote} in room ${roomCode}`);
+    const playerName = room.players[playerSlot]?.name;
+    logger.debug(`Emote sent: player ${playerSlot} (${playerName}) sent ${emote} in room ${roomCode}`);
 
     // Broadcast emote to all players in the room
     io.to(roomCode).emit('playerEmote', {
       playerId: playerSlot,
       emote,
+      playerName,
       timestamp: Date.now()
     });
   });

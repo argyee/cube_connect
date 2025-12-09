@@ -12,6 +12,7 @@ import { getCubeKey, parseCubeKey, touchesAnyCube } from '../utils/boardUtils';
 import { checkWin } from '../utils/winDetection';
 import { canMoveCube, getDisconnectedCubes } from '../utils/connectivity';
 import { generateRandomBoard } from '../utils/boardGeneration';
+import logger from '../utils/logger';
 import { toast } from 'react-toastify';
 
 const Game = () => {
@@ -54,6 +55,23 @@ const Game = () => {
   const [moveHistory, setMoveHistory] = useState([]);
   const [wasConnected, setWasConnected] = useState(isConnected);
   const [gameStartTime, setGameStartTime] = useState(null);
+  const [showResetDialog, setShowResetDialog] = useState(false);
+  const [showReturnHomeDialog, setShowReturnHomeDialog] = useState(false);
+  const [showLeaveGameDialog, setShowLeaveGameDialog] = useState(false);
+
+  // Warn about unsaved progress if user tries to refresh/close while game is active
+  useEffect(() => {
+    const handleBeforeUnload = (e) => {
+      if (!winner && Object.keys(board).length > 0) {
+        // Only warn if there's an active game (not finished)
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [winner, board]);
 
   // Initialize game start time when game begins
   useEffect(() => {
@@ -87,13 +105,9 @@ const Game = () => {
     const key = getCubeKey(row, col);
     const playerId = players[currentPlayer].id;
 
-    // In online mode, send move to server
-    if (isOnlineMode) {
-      makeMove(row, col, selectedCube);
-      return;
-    }
+    logger.debug('Game', 'Cell clicked in ' + (isOnlineMode ? 'online' : 'local') + ' mode', { row, col, key, selectedCube, isMovementPhase: isMovementPhase() });
 
-    // Local game logic
+    // Use local game logic for both online and offline (then send move to server in online mode)
     if (isMovementPhase()) {
       handleMovementPhase(row, col, key, playerId);
     } else {
@@ -102,7 +116,7 @@ const Game = () => {
   };
 
   const handlePlacementPhase = (row, col, key, playerId) => {
-    if (board[key]) {
+    if (board[key] !== undefined) {
       showToast('Square already occupied', 'error');
       return;
     }
@@ -128,6 +142,11 @@ const Game = () => {
       type: 'place'
     }]);
 
+    // In online mode, also send to server (server will validate and broadcast)
+    if (isOnlineMode) {
+      makeMove(row, col);
+    }
+
     const { isWin, winningLine: line } = checkWin(row, col, playerId, newBoard, winCondition);
     if (isWin) {
       setWinner(players[currentPlayer]);
@@ -141,8 +160,12 @@ const Game = () => {
   };
 
   const handleMovementPhase = (row, col, key, playerId) => {
+    logger.debug('Game', 'handleMovementPhase called', { row, col, key, playerId, selectedCube, isOnlineMode });
+    
     if (selectedCube) {
-      if (board[key]) {
+      logger.debug('Game', 'Moving cube', { from: selectedCube, to: key });
+      if (board[key] !== undefined) {
+        logger.debug('Game', 'Destination occupied', { key, value: board[key] });
         showToast('Cannot move to occupied square', 'error');
         setSelectedCube(null);
         setDisconnectedCubes([]);
@@ -153,7 +176,12 @@ const Game = () => {
       const tempBoard = { ...board };
       delete tempBoard[selectedCube];
 
-      if (!touchesAnyCube(row, col, tempBoard)) {
+      logger.debug('Game', 'Checking adjacency', { destKey: key, tempBoardSize: Object.keys(tempBoard).length });
+      const touches = touchesAnyCube(row, col, tempBoard);
+      logger.debug('Game', 'Adjacency check result', { touches });
+      
+      if (!touches) {
+        logger.debug('Game', 'Move destination not adjacent');
         showToast('Must move adjacent to an existing cube', 'warning');
         setSelectedCube(null);
         setDisconnectedCubes([]);
@@ -179,6 +207,11 @@ const Game = () => {
         type: 'move'
       }]);
 
+      // In online mode, also send to server (server will validate and broadcast)
+      if (isOnlineMode) {
+        makeMove(row, col, selectedCube);
+      }
+
       const { isWin, winningLine: line } = checkWin(row, col, playerId, newBoard, winCondition);
       if (isWin) {
         setWinner(players[currentPlayer]);
@@ -191,7 +224,8 @@ const Game = () => {
       setCurrentPlayer((currentPlayer + 1) % players.length);
     } else {
       if (board[key] === playerId) {
-        if (!canMoveCube(key, playerId, board)) {
+        // In online mode, skip client-side connectivity check - server will validate
+        if (!isOnlineMode && !canMoveCube(key, playerId, board)) {
           // Show disconnected cubes if hints are enabled
           if (showConnectivityHints) {
             const disconnected = getDisconnectedCubes(key, playerId, board);
@@ -202,10 +236,15 @@ const Game = () => {
         }
         setSelectedCube(key);
         setDisconnectedCubes([]);
-      } else if (board[key]) {
+      } else if (board[key] !== undefined) {
         showToast("That's not your cube!", 'warning');
       } else {
         showToast('Select one of your cubes to move first', 'info');
+      }
+      
+      // In online mode, send cube selection to server
+      if (isOnlineMode && board[key] === playerId) {
+        makeMove(row, col);
       }
     }
   };
@@ -240,10 +279,13 @@ const Game = () => {
     if (!showConnectivityHints) return;
     if (!isMovementPhase() || !isYourTurn || selectedCube || winner) return;
 
-    const playerId = players[currentPlayer].id;
-    if (board[key] === playerId && !canMoveCube(key, playerId, board)) {
-      // Show disconnected cubes on hover
-      const disconnected = getDisconnectedCubes(key, playerId, board);
+    // Only show disconnected cubes for current player's own cubes
+    const currentPlayerId = players[currentPlayer].id;
+    if (board[key] === currentPlayerId) {
+      // Show which cubes would disconnect if this one is moved
+      logger.debug('Game', 'Checking hover connectivity', { key, currentPlayerId, isMovementPhase: isMovementPhase(), isYourTurn, selectedCube });
+      const disconnected = getDisconnectedCubes(key, currentPlayerId, board);
+      logger.debug('Game', 'Disconnected cubes on hover', { key, disconnected });
       setHoveredCube(key);
       setDisconnectedCubes(disconnected);
     }
@@ -283,10 +325,10 @@ const Game = () => {
   };
 
   const handleReset = () => {
-    if (!confirm('Reset the board? This will start a new game with the same players.')) {
-      return;
-    }
+    setShowResetDialog(true);
+  };
 
+  const handleResetConfirm = () => {
     setMoveHistory([]);
 
     if (isOnlineMode) {
@@ -304,24 +346,43 @@ const Game = () => {
       setGameStartTime(Date.now());
       // Note: We don't call resetGame() because that sets gameStarted=false
     }
+    setShowResetDialog(false);
+  };
+
+  const handleResetCancel = () => {
+    setShowResetDialog(false);
   };
 
   const handleReturnHome = () => {
-    if (confirm('Return to menu? This will end the current game.')) {
-      if (isOnlineMode) {
-        leaveRoom();
-      }
-      resetGame(); // This goes back to start screen
+    setShowReturnHomeDialog(true);
+  };
+
+  const handleReturnHomeConfirm = () => {
+    if (isOnlineMode) {
+      leaveRoom();
     }
+    resetGame(); // This goes back to start screen
+    setShowReturnHomeDialog(false);
+  };
+
+  const handleReturnHomeCancel = () => {
+    setShowReturnHomeDialog(false);
   };
 
   const handleLeaveGame = () => {
-    // In online mode, confirm before leaving an active game
+    // In online mode, show custom dialog before leaving
     if (isOnlineMode) {
-      if (confirm('Leave the game? Other players will see you as disconnected.')) {
-        leaveRoom();
-      }
+      setShowLeaveGameDialog(true);
     }
+  };
+
+  const handleLeaveGameConfirm = () => {
+    leaveRoom();
+    setShowLeaveGameDialog(false);
+  };
+
+  const handleLeaveGameCancel = () => {
+    setShowLeaveGameDialog(false);
   };
 
   const handleTurnTimeout = () => {
@@ -348,18 +409,17 @@ const Game = () => {
       <div className="max-w-[1800px] mx-auto">
         <div className="bg-white rounded-lg shadow-lg p-3 sm:p-4 mb-3 sm:mb-4">
           <div className="flex items-center justify-between flex-wrap gap-3 sm:gap-4">
-            <h1
-              className="text-xl sm:text-2xl font-bold text-slate-800 cursor-pointer hover:text-blue-600 transition-colors"
-              onClick={handleReturnHome}
-              title="Return to menu"
-            >
-              Cube Connect
-              {isOnlineMode && (
-                <span className="ml-2 text-sm sm:text-base font-normal text-slate-600">
-                  (Online)
-                </span>
-              )}
-            </h1>
+            <div className="flex items-center gap-1 sm:gap-2 cursor-pointer hover:opacity-80 transition-opacity" onClick={handleReturnHome} title="Return to menu">
+              <img src="/favicon.png" alt="Cube Connect" className="w-16 h-16 sm:w-16 sm:h-16 -mr-2 sm:-mr-3" />
+              <h1 className="text-xl sm:text-2xl font-bold text-slate-800">
+                Cube Connect
+                {isOnlineMode && (
+                  <span className="ml-2 text-sm sm:text-base font-normal text-slate-600">
+                    (Multiplayer)
+                  </span>
+                )}
+              </h1>
+            </div>
 
             <div className="flex items-center gap-3 sm:gap-4 flex-wrap justify-center w-full sm:w-auto">
               <PlayerStatus
@@ -437,6 +497,84 @@ const Game = () => {
           </div>
         </div>
       </div>
+      
+      {/* Reset confirmation dialog overlay */}
+      {showResetDialog && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-2xl p-6 max-w-md w-full">
+            <h2 className="text-xl font-bold text-slate-800 mb-4">Reset the board?</h2>
+            <p className="text-slate-600 mb-6">
+              This will start a new game with the same players.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={handleResetCancel}
+                className="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-800 font-semibold py-2 px-4 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleResetConfirm}
+                className="flex-1 bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors"
+              >
+                Reset
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Return to menu confirmation dialog overlay */}
+      {showReturnHomeDialog && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-2xl p-6 max-w-md w-full">
+            <h2 className="text-xl font-bold text-slate-800 mb-4">Return to menu?</h2>
+            <p className="text-slate-600 mb-6">
+              This will end the current game.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={handleReturnHomeCancel}
+                className="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-800 font-semibold py-2 px-4 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleReturnHomeConfirm}
+                className="flex-1 bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors"
+              >
+                Leave
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Leave game confirmation dialog overlay */}
+      {showLeaveGameDialog && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-2xl p-6 max-w-md w-full">
+            <h2 className="text-xl font-bold text-slate-800 mb-4">Leave the game?</h2>
+            <p className="text-slate-600 mb-6">
+              Other players will see you as disconnected. You can rejoin within 2 minutes.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={handleLeaveGameCancel}
+                className="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-800 font-semibold py-2 px-4 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleLeaveGameConfirm}
+                className="flex-1 bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors"
+              >
+                Leave
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

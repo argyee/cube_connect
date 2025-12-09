@@ -45,6 +45,15 @@ export const GameProvider = ({ children }) => {
   const [gameStarted, setGameStarted] = useState(false);
   const [debugMode, setDebugMode] = useState(false);
   const [isOnlineMode, setIsOnlineMode] = useState(false);
+  // Socket lifecycle helpers
+  const socketRef = useRef(null);
+  const socketReadyResolveRef = useRef(null);
+  const socketReadyPromiseRef = useRef(null);
+  if (!socketReadyPromiseRef.current) {
+    socketReadyPromiseRef.current = new Promise((resolve) => {
+      socketReadyResolveRef.current = resolve;
+    });
+  }
 
   // Refs to hold latest values for use in socket event handlers (avoid stale closures)
   const roomCodeRef = useRef(roomCode);
@@ -82,7 +91,7 @@ export const GameProvider = ({ children }) => {
     // Auto-detect socket URL based on current host (works for localhost, network IP, and production)
     // Behavior:
     // - If `VITE_SOCKET_URL` is provided at build time, use it.
-    // - Otherwise, default to same-origin (so nginx can proxy /socket.io/ to the backend).
+    // - Otherwise, default to same-origin (Express serves both static files and Socket.IO).
     const getSocketURL = () => {
       if (import.meta.env.VITE_SOCKET_URL) {
         return import.meta.env.VITE_SOCKET_URL;
@@ -92,32 +101,31 @@ export const GameProvider = ({ children }) => {
       const hostname = window.location.hostname;
       const port = window.location.port ? `:${window.location.port}` : '';
 
-      // Use same-origin (no hard-coded backend port). When serving via nginx,
-      // nginx should proxy `/socket.io/` to the backend (3001).
+      // Use same-origin (no hard-coded backend port). Express serves everything on the same port.
       return `${protocol}//${hostname}${port}`;
     };
 
     const SOCKET_URL = getSocketURL();
-    logger.info(`Connecting to socket server: ${SOCKET_URL}`);
+    logger.info('GameContext', `Connecting to socket server: ${SOCKET_URL}`);
 
     const newSocket = io(SOCKET_URL, {
       autoConnect: false,
       reconnection: true,
       reconnectionDelay: 1000,
-      reconnectionAttempts: 3, // Reduced from 5 to 3
-      timeout: 5000 // Add connection timeout
+      reconnectionAttempts: 3,
+      timeout: 5000
     });
 
     // Connection events
     newSocket.on('connect', () => {
       setIsConnected(true);
       setConnectionError('');
-      logger.info('Socket connected');
+      logger.info('GameContext', 'Socket connected');
     });
 
     newSocket.on('disconnect', (reason) => {
       setIsConnected(false);
-      logger.info('Socket disconnected:', reason);
+      logger.info('GameContext', 'Socket disconnected', { reason });
 
       // Persist session on unexpected disconnect so user can rejoin from Home
       try {
@@ -133,10 +141,10 @@ export const GameProvider = ({ children }) => {
             cubesPerPlayer: roomCubesPerPlayerRef.current,
             winCondition: winConditionRef.current
           });
-          logger.info('💾 Room session saved on disconnect', { roomCode: rc, playerSlot: slotToSave });
+          logger.info('GameContext', 'Room session saved on disconnect', { roomCode: rc, playerSlot: slotToSave });
         }
       } catch (e) {
-        logger.warn('Failed to save session on disconnect', e);
+        logger.warn('GameContext', 'Failed to save session on disconnect', e);
       }
 
       // If disconnected due to server namespace disconnect, don't reconnect
@@ -146,33 +154,37 @@ export const GameProvider = ({ children }) => {
     });
 
     newSocket.on('connect_error', (error) => {
-      logger.warn('Socket connection error:', error.message);
+      logger.warn('GameContext', 'Socket connection error', { message: error.message });
       setConnectionError('Failed to connect to server');
       setIsConnected(false);
     });
     
     newSocket.on('reconnect_failed', () => {
-      logger.error('Socket reconnection failed after all attempts');
+      logger.error('GameContext', 'Socket reconnection failed after all attempts');
       setConnectionError('Could not connect to server');
     });
 
     // Room events
     newSocket.on('roomCreated', ({ roomCode: code, maxPlayers, cubesPerPlayer }) => {
+      logger.info('GameContext', 'Room created event received', { code, maxPlayers, cubesPerPlayer });
       setRoomCode(code);
       setIsInRoom(true);
-      setPlayerReadyStatus({}); // Reset ready status
+      setPlayerReadyStatus({});
       if (maxPlayers) setRoomMaxPlayers(maxPlayers);
       if (cubesPerPlayer) setRoomCubesPerPlayer(cubesPerPlayer);
+      
+      // Clear any stale session with intentionalLeave flag before navigating to new lobby
+      clearRoomSession();
       
       // Room session persistence happens in the roomJoined handler once server assigns slots
     });
 
     newSocket.on('roomJoined', ({ roomCode: code, playerSlot: slot, players: roomPlayersList, maxPlayers, cubesPerPlayer, winCondition: winCond }) => {
+      logger.info('GameContext', 'Room joined event received', { code, slot, playerCount: roomPlayersList.length, maxPlayers, cubesPerPlayer, winCond });
       setRoomCode(code);
       setPlayerSlot(slot);
       setIsInRoom(true);
       setRoomPlayers(roomPlayersList);
-      // Build playerReadyStatus from the players array
       const readyStatus = {};
       roomPlayersList.forEach((player, index) => {
         readyStatus[index] = player.ready || false;
@@ -182,9 +194,6 @@ export const GameProvider = ({ children }) => {
       if (cubesPerPlayer) setRoomCubesPerPlayer(cubesPerPlayer);
       if (winCond) setWinCondition(winCond);
 
-      // Persist session details immediately so the player can rejoin lobbies pre-game.
-      // NOTE: we intentionally do NOT persist `playerSlot` here for pre-game lobbies.
-      // `playerSlot` is only saved when the game actually starts (see gameStarted handler).
       if (code) {
         const resolvedMaxPlayers = maxPlayers || roomMaxPlayers;
         const resolvedCubesPerPlayer = cubesPerPlayer || roomCubesPerPlayer;
@@ -193,15 +202,16 @@ export const GameProvider = ({ children }) => {
 
         saveRoomSession({
           roomCode: code,
-          playerSlot: null,
+          playerSlot: slot ?? null,
           playerName: currentPlayer?.name || null,
           maxPlayers: resolvedMaxPlayers,
           cubesPerPlayer: resolvedCubesPerPlayer,
           winCondition: resolvedWinCondition
         });
 
-        logger.info('💾 Room session saved on join (pre-game)', {
+        logger.info('GameContext', 'Room session saved on roomJoined', {
           roomCode: code,
+          playerSlot: slot,
           maxPlayers: resolvedMaxPlayers,
           cubesPerPlayer: resolvedCubesPerPlayer,
           winCondition: resolvedWinCondition,
@@ -220,7 +230,7 @@ export const GameProvider = ({ children }) => {
 
     newSocket.on('playerReconnected', ({ playerSlot, players: roomPlayersList }) => {
       setRoomPlayers(roomPlayersList);
-      logger.info(`Player at slot ${playerSlot} has reconnected`);
+      logger.info('GameContext', 'Player reconnected', { playerSlot });
     });
 
     newSocket.on('playerReady', ({ playerSlot }) => {
@@ -232,7 +242,7 @@ export const GameProvider = ({ children }) => {
     });
 
     newSocket.on('gameStarted', ({ gameState, roomCode: eventRoomCode, playerSlot: eventPlayerSlot, maxPlayers: eventMaxPlayers, cubesPerPlayer: eventCubesPerPlayer }) => {
-      logger.info('📡 gameStarted event received:', {
+      logger.info('GameContext', 'Game started event received', {
         eventRoomCode,
         eventPlayerSlot,
         eventMaxPlayers,
@@ -249,14 +259,12 @@ export const GameProvider = ({ children }) => {
       setWinningLine([]);
       setSelectedCube(null);
       
-      // Save room session now that game has started (for rejoin capability)
-      // Use values from the event to ensure we have the correct data
       const roomCodeToSave = eventRoomCode || roomCode;
       const playerSlotToSave = eventPlayerSlot !== undefined ? eventPlayerSlot : playerSlot;
       const maxPlayersToSave = eventMaxPlayers || roomMaxPlayers;
       const cubesPerPlayerToSave = eventCubesPerPlayer || roomCubesPerPlayer;
       
-      logger.info('💾 Game started - Saving room session:', {
+      logger.info('GameContext', 'Saving room session after game start', {
         roomCode: roomCodeToSave,
         playerSlot: playerSlotToSave,
         maxPlayers: maxPlayersToSave,
@@ -264,7 +272,6 @@ export const GameProvider = ({ children }) => {
         winCondition: gameState.winCondition
       });
       
-      // Only save if we have a valid room code and player slot
       if (roomCodeToSave && playerSlotToSave !== null && playerSlotToSave !== undefined) {
         saveRoomSession({
           roomCode: roomCodeToSave,
@@ -274,12 +281,11 @@ export const GameProvider = ({ children }) => {
           cubesPerPlayer: cubesPerPlayerToSave,
           winCondition: gameState.winCondition
         });
-        logger.info('✅ Room session saved successfully');
+        logger.info('GameContext', 'Room session saved successfully after game start');
       } else {
-        logger.warn('❌ Could not save room session - missing roomCode or playerSlot', { roomCodeToSave, playerSlotToSave });
+        logger.warn('GameContext', 'Could not save room session - missing roomCode or playerSlot', { roomCodeToSave, playerSlotToSave });
       }
       
-      // Save game state for recovery after refresh
       saveGameState({
         board: gameState.board,
         currentPlayer: gameState.currentPlayer,
@@ -292,10 +298,16 @@ export const GameProvider = ({ children }) => {
     });
 
     newSocket.on('gameStateUpdate', ({ gameState }) => {
+      // Check if turn is changing by comparing board state - if it's different, a move was made
+      const boardChanged = JSON.stringify(gameState.board) !== JSON.stringify(board);
+      
       setBoard(gameState.board);
       setCurrentPlayer(gameState.currentPlayer);
       setPlayers(gameState.players);
-      setSelectedCube(null);
+      
+      // Update selectedCube from server (either set during selection or cleared after move)
+      setSelectedCube(gameState.selectedCube || null);
+      
       if (gameState.winner) {
         setWinner(gameState.winner);
       }
@@ -344,17 +356,19 @@ export const GameProvider = ({ children }) => {
     });
 
     // Emote events
-    newSocket.on('playerEmote', ({ playerId, emote, timestamp }) => {
-      setPlayerEmotes(prev => [...prev, { playerId, emote, timestamp }]);
+    newSocket.on('playerEmote', ({ playerId, emote, timestamp, playerName }) => {
+      setPlayerEmotes(prev => [...prev, { playerId, emote, timestamp, playerName }]);
     });
 
     // Timer state change from host
     newSocket.on('timerStateChanged', ({ enabled }) => {
-      logger.info(`Timer state changed to ${enabled}`);
+      logger.info('GameContext', 'Timer state changed', { enabled });
       setTurnTimerEnabled(enabled);
     });
 
     setSocket(newSocket);
+    socketRef.current = newSocket;
+    socketReadyResolveRef.current?.(newSocket);
 
     // Try to reconnect to saved session on mount
     const attemptAutoReconnect = async () => {
@@ -411,29 +425,43 @@ export const GameProvider = ({ children }) => {
     };
   }, []);
 
-  useEffect(() => {
-    if (socket) {
-      socket.on('disconnect', () => {
-        // Redirect to home page on disconnect
-        navigate('/');
-      });
-    }
-  }, [socket, navigate]);
+  // NOTE: Duplicate disconnect handler removed - socket disconnect is already handled in initialization useEffect above
 
   // Socket actions
   const connectSocket = () => {
-    return new Promise((resolve, reject) => {
-      if (!socket) {
+    const waitForSocket = async () => {
+      if (socketRef.current) return socketRef.current;
+      if (socketReadyPromiseRef.current) {
+        await socketReadyPromiseRef.current;
+        return socketRef.current;
+      }
+      throw new Error('Socket not initialized');
+    };
+
+    return new Promise(async (resolve, reject) => {
+      let activeSocket;
+      try {
+        activeSocket = await waitForSocket();
+      } catch (err) {
+        reject(err);
+        return;
+      }
+
+      if (!activeSocket) {
         reject(new Error('Socket not initialized'));
         return;
       }
 
-      if (socket.connected) {
+      if (activeSocket.connected) {
         resolve();
         return;
       }
 
-      // Set up one-time listeners for this connection attempt
+      const cleanup = () => {
+        activeSocket.off('connect', onConnect);
+        activeSocket.off('connect_error', onError);
+      };
+
       const onConnect = () => {
         cleanup();
         resolve();
@@ -444,19 +472,10 @@ export const GameProvider = ({ children }) => {
         reject(error);
       };
 
-      const cleanup = () => {
-        socket.off('connect', onConnect);
-        socket.off('connect_error', onError);
-      };
+      activeSocket.once('connect', onConnect);
+      activeSocket.once('connect_error', onError);
+      activeSocket.connect();
 
-      // Add listeners
-      socket.once('connect', onConnect);
-      socket.once('connect_error', onError);
-
-      // Attempt connection
-      socket.connect();
-
-      // Timeout after 10 seconds
       setTimeout(() => {
         cleanup();
         reject(new Error('Connection timeout'));
@@ -465,13 +484,12 @@ export const GameProvider = ({ children }) => {
   };
 
   const createRoom = async (winCond, playerCount = 3, cubesPerPlayer = INITIAL_CUBES, playerName = null) => {
-    if (!socket) return;
+    const activeSocket = socketRef.current || socket;
+    if (!activeSocket) return;
 
     try {
-      // Wait for connection before emitting
       await connectSocket();
       
-      // Create a promise that resolves when roomCreated is received or rejects on error
       return new Promise((resolve, reject) => {
         const timeoutId = setTimeout(() => {
           removeListeners();
@@ -492,14 +510,15 @@ export const GameProvider = ({ children }) => {
         };
 
         const removeListeners = () => {
-          socket.off('roomCreated', handleRoomCreated);
-          socket.off('error', handleError);
+          activeSocket.off('roomCreated', handleRoomCreated);
+          activeSocket.off('error', handleError);
         };
 
-        socket.on('roomCreated', handleRoomCreated);
-        socket.on('error', handleError);
+        // Attach listeners BEFORE emitting to avoid race condition
+        activeSocket.once('roomCreated', handleRoomCreated);
+        activeSocket.once('error', handleError);
         
-        socket.emit('createRoom', {
+        activeSocket.emit('createRoom', {
           winCondition: winCond,
           playerCount,
           cubesPerPlayer,
@@ -513,7 +532,8 @@ export const GameProvider = ({ children }) => {
   };
 
   const joinRoom = async (code, playerName = null) => {
-    if (!socket) return;
+    const activeSocket = socketRef.current || socket;
+    if (!activeSocket) return;
 
     try {
       // Wait for connection before emitting
@@ -529,7 +549,7 @@ export const GameProvider = ({ children }) => {
         }, 5000);
 
         try {
-          socket.emit('joinRoom', { roomCode: code, playerName }, (err) => {
+          activeSocket.emit('joinRoom', { roomCode: code, playerName }, (err) => {
             if (settled) return;
             clearTimeout(timeoutId);
             settled = true;
@@ -556,7 +576,8 @@ export const GameProvider = ({ children }) => {
 
   const reconnectToGame = async (roomCode, playerSlot) => {
     return new Promise((resolve, reject) => {
-      if (!socket) {
+      const activeSocket = socketRef.current || socket;
+      if (!activeSocket) {
         reject(new Error('Socket not connected'));
         return;
       }
@@ -567,15 +588,14 @@ export const GameProvider = ({ children }) => {
         reject(new Error('Room no longer exists'));
       }, 10000);
 
-      // Emit reconnect event
-      socket.emit('reconnect', { roomCode, playerSlot }, (error) => {
+      activeSocket.emit('reconnect', { roomCode, playerSlot }, (error) => {
         clearTimeout(timeoutId);
         if (error) {
-          // Room not found is expected if all players have left - don't log as error
-          logger.debug(`Reconnect failed for room ${roomCode}: ${error}`);
+          logger.debug('GameContext', 'Reconnect failed (room may not exist)', { roomCode, error });
           reject(new Error(error));
         } else {
-          logger.info('Reconnect successful');
+          logger.info('GameContext', 'Reconnect successful', { roomCode, playerSlot });
+          setIsOnlineMode(true);
           resolve(true);
         }
       });
@@ -599,7 +619,7 @@ export const GameProvider = ({ children }) => {
           intentionalLeave: true  // Mark as intentional leave so auto-reconnect doesn't trigger
         };
         saveRoomSession(sessionToSave);
-        logger.info('💾 Room session refreshed on leave', {
+        logger.info('Room session refreshed on leave', {
           roomCode,
           playerSlot: slotToSave,
           maxPlayers: roomMaxPlayers,
@@ -633,7 +653,7 @@ export const GameProvider = ({ children }) => {
     if (socket && roomCode && playerSlot !== null) {
       const isCurrentlyReady = playerReadyStatus[playerSlot] || false;
       const eventName = isCurrentlyReady ? 'setNotReady' : 'setReady';
-      logger.debug(`Emitting ${eventName} for playerSlot ${playerSlot} in room ${roomCode}`);
+      logger.debug('GameContext', 'Emitting ready state change', { eventName, playerSlot, roomCode });
       socket.emit(eventName, {
         roomCode,
         playerSlot
@@ -666,10 +686,17 @@ export const GameProvider = ({ children }) => {
     }
   };
 
+  const resetGameOnline = () => {
+    if (isOnlineMode && socket && roomCode) {
+      logger.info('GameContext', 'Requesting game reset');
+      socket.emit('resetGame', { roomCode });
+    }
+  };
+
   const setTimerEnabledOnline = (enabled) => {
     // Emit timer state change to all other players in the room
     if (socket && isOnlineMode && playerSlot === 0) {
-      logger.info(`Host changed timer state to ${enabled}`);
+      logger.info('GameContext', 'Host changed timer state', { enabled });
       socket.emit('setTimerEnabled', { roomCode, enabled });
     }
   };

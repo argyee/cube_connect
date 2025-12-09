@@ -7,34 +7,33 @@ import { loadGameState, loadRoomSession } from '../utils/sessionStorage';
 const GamePage = () => {
   const navigate = useNavigate();
   const { code } = useParams();
-  const { gameStarted, isOnlineMode, roomCode, socket } = useGame();
+  const { gameStarted, isOnlineMode, setGameStarted } = useGame();
 
   useEffect(() => {
     // If game is not started and user accessed this page directly,
-    // try to restore from saved session
+    // check for saved session
     if (!gameStarted && !isOnlineMode) {
       const savedGameState = loadGameState();
       const savedRoomSession = loadRoomSession();
 
       // If there's a saved room session, they might be rejoining
       if (savedRoomSession && savedRoomSession.roomCode) {
-        // Navigate to lobby to rejoin
         navigate(`/lobby/${savedRoomSession.roomCode}`);
         return;
       }
 
-      // If no saved game state and not in a room, redirect to home
+      // If no saved game state, redirect to home
       if (!savedGameState) {
         navigate('/');
       }
     }
   }, [gameStarted, isOnlineMode, navigate]);
 
-  // If user hasn't started a game, redirect to home
+  // If user hasn't started a game, show loading
   if (!gameStarted) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-slate-900">
-        <p className="text-white text-xl">Redirecting...</p>
+        <p className="text-white text-xl">Loading...</p>
       </div>
     );
   }

@@ -1,3 +1,5 @@
+import logger from './logger.js';
+
 /**
  * Utility functions for board position management
  */
@@ -34,5 +36,16 @@ export const isValidPosition = (row, col, gridSize) => {
  */
 export const touchesAnyCube = (row, col, board) => {
   const adjacent = getAdjacentPositions(row, col);
-  return adjacent.some(pos => board[getCubeKey(pos.row, pos.col)]);
+  const adjacentKeys = adjacent.map(pos => getCubeKey(pos.row, pos.col));
+  const hasTouch = adjacent.some(pos => board[getCubeKey(pos.row, pos.col)] !== undefined);
+  
+  logger.debug('BoardUtils', 'touchesAnyCube check', { 
+    row, 
+    col,
+    adjacentKeys,
+    boardKeys: Object.keys(board).sort().join(', '),
+    hasTouch
+  });
+  
+  return hasTouch;
 };

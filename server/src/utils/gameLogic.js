@@ -22,7 +22,7 @@ export const getAdjacentPositions = (row, col) => {
 
 export const touchesAnyCube = (row, col, board) => {
   const adjacent = getAdjacentPositions(row, col);
-  return adjacent.some(pos => board[getCubeKey(pos.row, pos.col)]);
+  return adjacent.some(pos => board[getCubeKey(pos.row, pos.col)] !== undefined);
 };
 
 export const checkConnectivity = (playerId, board, excludeKey = null) => {
