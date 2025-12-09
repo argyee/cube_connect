@@ -24,5 +24,6 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "all": "^0.0.0"
   }
 }

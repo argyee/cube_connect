@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   cube-connect:
     build:
@@ -11,7 +9,7 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=3001
-      - ALLOWED_ORIGINS=http://localhost:3001
+      - ALLOWED_ORIGINS=https://cube.aurorra.app
     logging:
       driver: "json-file"
       options:
