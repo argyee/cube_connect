@@ -1,7 +1,7 @@
 {
   "name": "cube-connect",
   "version": "1.0.0",
-  "description": "A 3-player strategy board game with online multiplayer",
+  "description": "A multiplayer strategy board game with online play",
   "scripts": {
     "install:all": "npm install --prefix client && npm install --prefix server",
     "dev:client": "npm run dev --prefix client",
@@ -22,13 +22,6 @@
     "socketio"
   ],
   "author": "",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/yourorg/cube-connect.git"
-  },
-  "bugs": {
-    "url": "https://github.com/yourorg/cube-connect/issues"
-  },
   "license": "MIT",
   "dependencies": {
   }

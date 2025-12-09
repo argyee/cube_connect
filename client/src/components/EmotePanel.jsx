@@ -66,9 +66,9 @@ const EmotePanel = ({ onSendEmote, playerEmotes, players }) => {
           return (
             <div
               key={emote.id}
-              className="flex items-center gap-2 bg-white rounded-lg shadow-lg px-3 py-2 animate-bounce"
+              className="flex items-center gap-2 bg-white rounded-lg shadow-lg px-3 py-2 emote-animation"
               style={{
-                animation: 'slideIn 0.3s ease-out, fadeOut 0.5s ease-in 2.5s forwards'
+                backgroundColor: player?.color || '#666'
               }}
             >
               <div
@@ -91,27 +91,6 @@ const EmotePanel = ({ onSendEmote, playerEmotes, players }) => {
           onClick={() => setShowPanel(false)}
         />
       )}
-
-      <style jsx>{`
-        @keyframes slideIn {
-          from {
-            transform: translateX(100px);
-            opacity: 0;
-          }
-          to {
-            transform: translateX(0);
-            opacity: 1;
-          }
-        }
-        @keyframes fadeOut {
-          from {
-            opacity: 1;
-          }
-          to {
-            opacity: 0;
-          }
-        }
-      `}</style>
     </div>
   );
 };

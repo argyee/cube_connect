@@ -45,19 +45,30 @@ export const checkWin = (row, col, playerId, board, winCondition) => {
     ];
 
     for (const { dr, dc } of directions) {
-      const count = 1 + // Count the placed cube itself
-        countInDirection(row, col, dr, dc, playerId, board, winCondition) +
-        countInDirection(row, col, -dr, -dc, playerId, board, winCondition);
+      const forward = countInDirection(row, col, dr, dc, playerId, board, winCondition);
+      const backward = countInDirection(row, col, -dr, -dc, playerId, board, winCondition);
+      const total = 1 + forward + backward; // Include placed cube
 
-      if (count >= winCondition) {
+      if (total >= winCondition) {
+        const winningLine = [];
+
+        // Build forward half (including placed cube at start)
+        for (let i = backward; i > 0; i--) {
+          winningLine.push(getCubeKey(row - dr * i, col - dc * i));
+        }
+        winningLine.push(getCubeKey(row, col));
+        for (let i = 1; i <= forward; i++) {
+          winningLine.push(getCubeKey(row + dr * i, col + dc * i));
+        }
+
         logger.debug(`Win detected for player ${playerId} at (${row}, ${col}) with condition ${winCondition}`);
-        return true;
+        return { isWin: true, winningLine };
       }
     }
 
-    return false;
+    return { isWin: false, winningLine: [] };
   } catch (error) {
     logger.error('Error checking win condition', { row, col, playerId, winCondition, error: error.message });
-    return false;
+    return { isWin: false, winningLine: [] };
   }
 };

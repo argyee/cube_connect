@@ -13,7 +13,7 @@ const GameMessages = ({
     return (
       <div className="mt-3 text-center">
         <div className="text-xl sm:text-2xl font-bold" style={{ color: winner.color }}>
-          🎉 {winner.name} Wins! 🎉
+          {winner.name} Wins! 🎉
         </div>
       </div>
     );

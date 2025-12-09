@@ -8,6 +8,7 @@ const GameBoard = ({
   board,
   selectedCube,
   disconnectedCubes = [],
+  winningLine = [],
   onCellClick,
   onCubeHover,
   onCubeLeave,
@@ -16,6 +17,8 @@ const GameBoard = ({
   currentPlayerSlot
 }) => {
   const [zoom, setZoom] = useState(1); // Zoom level: 0.5, 0.75, 1, 1.25, 1.5, 2
+
+  const winningSet = new Set(winningLine);
 
   const columnLabels = Array.from({ length: GRID_SIZE }, (_, i) =>
     String.fromCharCode(65 + i) // A, B, C, ... T
@@ -113,6 +116,7 @@ const GameBoard = ({
               const isSelected = selectedCube === key;
               const isDisconnected = disconnectedCubes.includes(key);
               const player = playerId ? findPlayerById(playerId, players) : null;
+              const isWinningCube = winningSet.has(key);
 
               // Check if any player's cursor is on this cell
               const cursorData = Object.entries(playerCursors).find(
@@ -130,6 +134,7 @@ const GameBoard = ({
                   className={`
                     cursor-pointer transition-all relative
                     ${isSelected ? 'ring-2 ring-yellow-400 scale-110 z-10 shadow-lg' : ''}
+                    ${isWinningCube ? 'ring-2 ring-emerald-400 ring-offset-2 ring-offset-white shadow-xl scale-110 z-20' : ''}
                     ${playerId ? 'shadow-sm hover:brightness-110' : 'bg-white hover:bg-slate-100'}
                   `}
                   style={{
@@ -139,6 +144,26 @@ const GameBoard = ({
                     opacity: isDisconnected ? 0.85 : 1
                   }}
                 >
+                  {isWinningCube && (
+                    <>
+                      {/* Outer glow ring */}
+                      <div
+                        className="absolute inset-0 rounded animate-pulse"
+                        style={{
+                          border: '3px solid rgb(34, 197, 94)',
+                          boxShadow: '0 0 20px rgba(34, 197, 94, 0.8), 0 0 40px rgba(34, 197, 94, 0.5), inset 0 0 10px rgba(34, 197, 94, 0.4)'
+                        }}
+                      />
+                      {/* Inner highlight */}
+                      <div
+                        className="absolute inset-1 rounded pointer-events-none"
+                        style={{
+                          background: 'radial-gradient(circle at 30% 30%, rgba(255,255,255,0.4), transparent)',
+                          border: '1px solid rgba(34, 197, 94, 0.5)'
+                        }}
+                      />
+                    </>
+                  )}
                   {/* Disconnected cube warning overlay */}
                   {isDisconnected && (
                     <>

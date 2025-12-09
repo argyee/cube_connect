@@ -301,6 +301,7 @@ class RoomManager {
       currentPlayer: 0,
       players: generatePlayers(playerCount, playerNames, cubesPerPlayer),
       winner: null,
+      winningLine: [],
       selectedCube: null,
       winCondition: room.winCondition
     };

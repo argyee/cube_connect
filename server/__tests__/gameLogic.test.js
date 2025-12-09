@@ -8,8 +8,9 @@ test('checkWin detects horizontal win', () => {
   board[getCubeKey(0, 1)] = 1;
   board[getCubeKey(0, 2)] = 1;
 
-  const won = checkWin(0, 2, 1, board, 3);
-  assert.strictEqual(won, true);
+  const result = checkWin(0, 2, 1, board, 3);
+  assert.strictEqual(result.isWin, true);
+  assert.deepEqual(result.winningLine, [getCubeKey(0,0), getCubeKey(0,1), getCubeKey(0,2)]);
 });
 
 test('checkWin returns false when not enough in a row', () => {
@@ -17,8 +18,9 @@ test('checkWin returns false when not enough in a row', () => {
   board[getCubeKey(0, 0)] = 1;
   board[getCubeKey(0, 2)] = 1;
 
-  const won = checkWin(0, 2, 1, board, 3);
-  assert.strictEqual(won, false);
+  const result = checkWin(0, 2, 1, board, 3);
+  assert.strictEqual(result.isWin, false);
+  assert.deepEqual(result.winningLine, []);
 });
 
 test('canMoveCube prevents breaking connectivity', () => {

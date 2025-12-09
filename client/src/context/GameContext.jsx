@@ -25,6 +25,7 @@ export const GameProvider = ({ children }) => {
   );
   const [selectedCube, setSelectedCube] = useState(null);
   const [winner, setWinner] = useState(null);
+  const [winningLine, setWinningLine] = useState([]);
   const [winCondition, setWinCondition] = useState(WIN_CONDITIONS.DEFAULT);
   const [invalidMoveMessage, setInvalidMoveMessage] = useState('');
 
@@ -245,6 +246,7 @@ export const GameProvider = ({ children }) => {
       setWinCondition(gameState.winCondition);
       setGameStarted(true);
       setWinner(null);
+      setWinningLine([]);
       setSelectedCube(null);
       
       // Save room session now that game has started (for rejoin capability)
@@ -283,6 +285,7 @@ export const GameProvider = ({ children }) => {
         currentPlayer: gameState.currentPlayer,
         players: gameState.players,
         winner: null,
+        winningLine: [],
         selectedCube: null,
         roomCode
       });
@@ -296,6 +299,7 @@ export const GameProvider = ({ children }) => {
       if (gameState.winner) {
         setWinner(gameState.winner);
       }
+      setWinningLine(gameState.winningLine || []);
       
       // Update saved game state for recovery after refresh
       saveGameState({
@@ -303,6 +307,7 @@ export const GameProvider = ({ children }) => {
         currentPlayer: gameState.currentPlayer,
         players: gameState.players,
         winner: gameState.winner || null,
+        winningLine: gameState.winningLine || [],
         selectedCube: null,
         roomCode
       });
@@ -341,6 +346,12 @@ export const GameProvider = ({ children }) => {
     // Emote events
     newSocket.on('playerEmote', ({ playerId, emote, timestamp }) => {
       setPlayerEmotes(prev => [...prev, { playerId, emote, timestamp }]);
+    });
+
+    // Timer state change from host
+    newSocket.on('timerStateChanged', ({ enabled }) => {
+      logger.info(`Timer state changed to ${enabled}`);
+      setTurnTimerEnabled(enabled);
     });
 
     setSocket(newSocket);
@@ -551,14 +562,17 @@ export const GameProvider = ({ children }) => {
       }
 
       const timeoutId = setTimeout(() => {
-        reject(new Error('Reconnect timeout'));
+        // Room doesn't exist (normal if all players left) - suppress timeout error
+        clearTimeout(timeoutId);
+        reject(new Error('Room no longer exists'));
       }, 10000);
 
       // Emit reconnect event
       socket.emit('reconnect', { roomCode, playerSlot }, (error) => {
         clearTimeout(timeoutId);
         if (error) {
-          logger.error('Reconnect failed:', error);
+          // Room not found is expected if all players have left - don't log as error
+          logger.debug(`Reconnect failed for room ${roomCode}: ${error}`);
           reject(new Error(error));
         } else {
           logger.info('Reconnect successful');
@@ -575,14 +589,16 @@ export const GameProvider = ({ children }) => {
         const currentPlayer = roomPlayers?.[playerSlot] || null;
         // Only persist playerSlot if a game is in progress; otherwise leave it null
         const slotToSave = gameStarted ? playerSlot : null;
-        saveRoomSession({
+        const sessionToSave = {
           roomCode,
           playerSlot: slotToSave,
           playerName: currentPlayer?.name || null,
           maxPlayers: roomMaxPlayers,
           cubesPerPlayer: roomCubesPerPlayer,
-          winCondition
-        });
+          winCondition,
+          intentionalLeave: true  // Mark as intentional leave so auto-reconnect doesn't trigger
+        };
+        saveRoomSession(sessionToSave);
         logger.info('💾 Room session refreshed on leave', {
           roomCode,
           playerSlot: slotToSave,
@@ -650,6 +666,14 @@ export const GameProvider = ({ children }) => {
     }
   };
 
+  const setTimerEnabledOnline = (enabled) => {
+    // Emit timer state change to all other players in the room
+    if (socket && isOnlineMode && playerSlot === 0) {
+      logger.info(`Host changed timer state to ${enabled}`);
+      socket.emit('setTimerEnabled', { roomCode, enabled });
+    }
+  };
+
   // Local game actions
   const resetGame = () => {
     setBoard({});
@@ -657,6 +681,7 @@ export const GameProvider = ({ children }) => {
     setPlayers(PLAYERS_CONFIG.map(p => ({ ...p, cubesLeft: INITIAL_CUBES })));
     setSelectedCube(null);
     setWinner(null);
+    setWinningLine([]);
     setInvalidMoveMessage('');
     setGameStarted(false);
     
@@ -682,6 +707,7 @@ export const GameProvider = ({ children }) => {
     setCurrentPlayer(0);
     setSelectedCube(null);
     setWinner(null);
+    setWinningLine([]);
     setIsOnlineMode(false);
     setGameStarted(true);
   };
@@ -698,6 +724,8 @@ export const GameProvider = ({ children }) => {
     setSelectedCube,
     winner,
     setWinner,
+    winningLine,
+    setWinningLine,
     winCondition,
     setWinCondition,
     invalidMoveMessage,
@@ -749,6 +777,7 @@ export const GameProvider = ({ children }) => {
     makeMove,
     sendCursorPosition,
     sendEmote,
+    setTimerEnabledOnline,
     resetGame,
     startLocalGame
   };

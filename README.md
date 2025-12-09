@@ -1,10 +1,20 @@
 # Cube Connect
 
-A multi-player strategy board game built with React, Node.js, and Socket.IO.
+A multiplayer strategy board game built with React, Node.js, and Socket.IO. Supports 2-6 players with customizable win conditions and game settings.
 
 ## Overview
 
-Cube Connect is a turn-based strategy game where players place and move cubes on a grid while maintaining connectivity. The goal is to create a line of N cubes (configurable) in any direction.
+Cube Connect is a turn-based strategy game where players place and move cubes on a 20×20 grid while maintaining connectivity. The goal is to create a line of N cubes (configurable, default 4) in any direction.
+
+### Game Features
+
+- **2-6 Players**: Flexible player count for different game experiences
+- **Local & Online Multiplayer**: Play hot-seat locally or create online rooms with friends
+- **Customizable Settings**: Adjust win condition (4-6), cubes per player (8-20), and player count
+- **Turn Timer**: Optional timer with host control in multiplayer games
+- **Real-time Features**: Live cursor positions, emote reactions, and instant updates
+- **Auto-Reconnect**: Seamless reconnection if disconnected during a game
+- **Session Persistence**: Rejoin your last room after closing the browser
 
 ### Game Rules
 
@@ -12,6 +22,7 @@ Cube Connect is a turn-based strategy game where players place and move cubes on
 - **Movement Phase**: When out of cubes, players can move their existing cubes
 - **Connectivity Requirement**: All cubes must form a connected group (horizontally/vertically only)
 - **Win Condition**: Get N cubes in a row (any direction, including diagonals)
+- **Turn Order**: Turns rotate among all active players
 
 ## Project Structure
 
@@ -75,41 +86,6 @@ This creates a multi-stage image that:
 1. **Stage 1**: Builds the React client (`npm run build`)
 2. **Stage 2**: Copies server and built client dist, installs production dependencies
 
-### Running with Docker Compose
-
-The easiest way to run in production:
-
-```bash
-npm run docker:up
-```
-
-This starts the container with:
-- Express serving both backend API and static client files
-- Automated log rotation (json-file driver, 10MB per file, 3 file limit)
-- Health checks (every 30s)
-- Auto-restart on failure
-
-Access the app at http://localhost:3001
-
-### Docker Commands Reference
-
-```bash
-# View logs in real-time
-npm run docker:logs
-
-# Stop the container
-npm run docker:down
-
-# Restart the container
-npm run docker:restart
-
-# Manual docker-compose commands
-docker-compose up -d          # Start in background
-docker-compose down           # Stop and remove
-docker-compose restart        # Restart
-docker-compose logs -f        # Follow logs
-```
-
 ### Environment Variables
 
 Set these in `docker-compose.yml` or via `-e` flags:
@@ -166,24 +142,30 @@ docker ps | grep cube-connect  # Look for "(healthy)" status
 ## Socket.IO Events
 
 ### Client → Server
-- `createRoom`: Create a new game room
-- `joinRoom`: Join an existing room
+- `createRoom`: Create a new game room with settings (winCondition, playerCount, cubesPerPlayer, playerName)
+- `joinRoom`: Join an existing room by code
 - `leaveRoom`: Leave the current room
-- `startGame`: Start the game (when all players ready)
-- `makeMove`: Place or move a cube
+- `reconnect`: Reconnect to a room after disconnect
+- `startGame`: Start the game (host only, when all players ready)
+- `makeMove`: Place or move a cube (or skip turn on timeout: row=-1, col=-1)
 - `setReady` / `setNotReady`: Toggle player ready status
+- `setTimerEnabled`: Toggle turn timer (host only)
 - `cursorMove`: Update cursor position (for UI feedback)
 - `sendEmote`: Send an emote reaction
 
 ### Server → Client
-- `roomCreated`: Room successfully created
-- `roomJoined`: Player joined room
+- `roomCreated`: Room successfully created with room code
+- `roomJoined`: Player joined room (includes playerSlot, settings)
 - `playerJoined`: Another player joined
-- `gameStarted`: Game initialization data
-- `gameStateUpdate`: Board/game state changes
+- `playerLeft`: Another player left
+- `playerReconnected`: Player reconnected after disconnect
+- `gameStarted`: Game initialization data with full game state
+- `gameStateUpdate`: Board/game state changes (includes winningLine if game won)
 - `invalidMove`: Move rejected with reason
+- `timerStateChanged`: Timer enabled/disabled by host
 - `playerCursorMove`: Another player's cursor position
 - `playerEmote`: Another player sent emote
+- `error`: General error message
 
 ## Building for Production
 
@@ -250,13 +232,22 @@ docker exec cube-connect curl http://localhost:3001/health
 - **Server-Authoritative**: All game logic validated on server
 - **Single-Instance**: Room state is in-memory. For multi-instance deployment, migrate to Redis.
 
+## Current Limitations
+
+- **Single-Instance Only**: Room state is in-memory. For multi-instance/clustered deployment, migrate to Redis or similar external store
+- **No Persistence**: Games are lost on server restart
+- **Grace Periods**: Rooms expire 10 minutes after last player leaves; disconnected players have 2 minutes to reconnect
+
 ## Future Enhancements
 
-- [ ] Game replay/history
-- [ ] Player statistics tracking
-- [ ] Persistent database (currently in-memory)
+- [ ] Database persistence (rooms, game history, player stats)
+- [ ] Multi-instance support with Redis
+- [ ] Game replay/history viewer
+- [ ] Player rankings and statistics
 - [ ] Advanced error monitoring (Sentry integration)
-- [ ] Performance metrics dashboard
+- [ ] Mobile-optimized UI improvements
+- [ ] Spectator mode
+- [ ] In-game chat
 
 ## License
 

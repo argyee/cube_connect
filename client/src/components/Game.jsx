@@ -4,6 +4,7 @@ import GameBoard from './GameBoard';
 import PlayerStatus from './PlayerStatus';
 import GameControls from './GameControls';
 import GameMessages from './GameMessages';
+import GameInfo from './GameInfo';
 import MoveHistory from './MoveHistory';
 import TurnTimer from './TurnTimer';
 import EmotePanel from './EmotePanel';
@@ -12,7 +13,6 @@ import { checkWin } from '../utils/winDetection';
 import { canMoveCube, getDisconnectedCubes } from '../utils/connectivity';
 import { generateRandomBoard } from '../utils/boardGeneration';
 import { toast } from 'react-toastify';
-import { AlertCircle } from 'lucide-react';
 
 const Game = () => {
   const {
@@ -26,6 +26,8 @@ const Game = () => {
     setSelectedCube,
     winner,
     setWinner,
+    winningLine,
+    setWinningLine,
     winCondition,
     invalidMoveMessage,
     setInvalidMoveMessage,
@@ -51,6 +53,14 @@ const Game = () => {
   const [hoveredCube, setHoveredCube] = useState(null);
   const [moveHistory, setMoveHistory] = useState([]);
   const [wasConnected, setWasConnected] = useState(isConnected);
+  const [gameStartTime, setGameStartTime] = useState(null);
+
+  // Initialize game start time when game begins
+  useEffect(() => {
+    if (gameStartTime === null && Object.keys(board).length === 0) {
+      setGameStartTime(Date.now());
+    }
+  }, []);
 
   // Detect disconnections and show banner
   useEffect(() => {
@@ -118,10 +128,14 @@ const Game = () => {
       type: 'place'
     }]);
 
-    if (checkWin(row, col, playerId, newBoard, winCondition)) {
+    const { isWin, winningLine: line } = checkWin(row, col, playerId, newBoard, winCondition);
+    if (isWin) {
       setWinner(players[currentPlayer]);
+      setWinningLine(line);
       return;
     }
+
+    setWinningLine([]);
 
     setCurrentPlayer((currentPlayer + 1) % players.length);
   };
@@ -165,10 +179,14 @@ const Game = () => {
         type: 'move'
       }]);
 
-      if (checkWin(row, col, playerId, newBoard, winCondition)) {
+      const { isWin, winningLine: line } = checkWin(row, col, playerId, newBoard, winCondition);
+      if (isWin) {
         setWinner(players[currentPlayer]);
+        setWinningLine(line);
         return;
       }
+
+      setWinningLine([]);
 
       setCurrentPlayer((currentPlayer + 1) % players.length);
     } else {
@@ -239,14 +257,29 @@ const Game = () => {
   };
 
   const handleRandomBoard = () => {
-    const { board: newBoard, players: newPlayers } = generateRandomBoard(winCondition);
+    // Reconstruct original cubes-per-player from current state (remaining + already placed)
+    const anyPlayer = players[0];
+    const cubesOnBoardPerPlayer = anyPlayer
+      ? Object.values(board).filter(pid => pid === anyPlayer.id).length
+      : 0;
+    const cubesPerPlayerTotal = anyPlayer
+      ? anyPlayer.cubesLeft + cubesOnBoardPerPlayer
+      : undefined;
+
+    const { board: newBoard, players: newPlayers } = generateRandomBoard(
+      winCondition,
+      players,
+      cubesPerPlayerTotal
+    );
     setBoard(newBoard);
     setPlayers(newPlayers);
     setCurrentPlayer(0);
     setSelectedCube(null);
     setWinner(null);
+    setWinningLine([]);
     setInvalidMoveMessage('');
     setMoveHistory([]);
+    setGameStartTime(Date.now());
   };
 
   const handleReset = () => {
@@ -265,8 +298,10 @@ const Game = () => {
       setPlayers(players.map(p => ({ ...p, cubesLeft: p.cubesLeft || 14 }))); // Reset cubes but keep player config
       setSelectedCube(null);
       setWinner(null);
+      setWinningLine([]);
       setInvalidMoveMessage('');
       setDisconnectedCubes([]);
+      setGameStartTime(Date.now());
       // Note: We don't call resetGame() because that sets gameStarted=false
     }
   };
@@ -290,11 +325,22 @@ const Game = () => {
   };
 
   const handleTurnTimeout = () => {
+    // Only apply timeout if it's your turn (in online mode, only the active player's timeout counts)
+    if (isOnlineMode && !isYourTurn) return;
+
     // Skip turn when timer runs out
     showToast(`${players[currentPlayer].name}'s turn timed out!`, 'warning');
     setSelectedCube(null);
     setDisconnectedCubes([]);
-    setCurrentPlayer((currentPlayer + 1) % players.length);
+    
+    // In online mode, send a skip turn action to the server
+    if (isOnlineMode) {
+      // Emit a special move that the server interprets as a turn skip
+      makeMove(-1, -1);
+    } else {
+      // In local mode, just advance the turn
+      setCurrentPlayer((currentPlayer + 1) % players.length);
+    }
   };
 
   return (
@@ -326,7 +372,7 @@ const Game = () => {
 
               {turnTimerEnabled && !winner && (
                 <TurnTimer
-                  isActive={!isOnlineMode || isYourTurn}
+                  isActive={true}
                   timerSeconds={turnTimerSeconds}
                   onTimeout={handleTurnTimeout}
                   currentPlayer={currentPlayer}
@@ -362,11 +408,12 @@ const Game = () => {
           />
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr,300px] gap-3 sm:gap-4">
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr,340px] gap-3 sm:gap-4">
           <GameBoard
             board={board}
             selectedCube={selectedCube}
             disconnectedCubes={disconnectedCubes}
+            winningLine={winningLine}
             onCellClick={handleCellClick}
             onCubeHover={handleCubeHover}
             onCubeLeave={handleCubeLeave}
@@ -375,8 +422,18 @@ const Game = () => {
             currentPlayerSlot={playerSlot}
           />
 
-          <div className="lg:h-[600px] h-[300px]">
-            <MoveHistory moves={moveHistory} players={players} />
+          <div className="space-y-3 sm:space-y-4 flex flex-col">
+            <GameInfo
+              winCondition={winCondition}
+              gameStartTime={gameStartTime}
+              players={players}
+              currentPlayer={currentPlayer}
+              debugMode={debugMode}
+            />
+            <div className="bg-white rounded-lg shadow-lg p-3 sm:p-4 flex-1 overflow-auto min-h-[300px]">
+              <h3 className="font-bold text-slate-800 mb-3">Move History</h3>
+              <MoveHistory moves={moveHistory} players={players} />
+            </div>
           </div>
         </div>
       </div>

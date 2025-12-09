@@ -123,6 +123,25 @@ io.on('connection', (socket) => {
     handleMakeMove(socket, io, data);
   });
 
+  // Timer state change (host only)
+  socket.on('setTimerEnabled', ({ roomCode, enabled }) => {
+    if (!roomCode) return;
+
+    const room = roomManager.getRoom(roomCode);
+    if (!room) return;
+
+    const playerSlot = room.players.findIndex(p => p?.socketId === socket.id);
+    if (playerSlot !== 0) {
+      logger.warn(`Non-host player ${playerSlot} attempted to change timer state in ${roomCode}`);
+      return;
+    }
+
+    logger.info(`Host changed timer state to ${enabled} in room ${roomCode}`);
+
+    // Broadcast timer state change to all players in the room
+    io.to(roomCode).emit('timerStateChanged', { enabled });
+  });
+
   // Cursor tracking
   socket.on('cursorMove', ({ roomCode, row, col }) => {
     if (!roomCode || row === undefined || col === undefined) return;

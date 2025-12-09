@@ -94,12 +94,12 @@ export const checkWin = (row, col, playerId, board, winCondition) => {
   ];
 
   for (const { dr, dc } of directions) {
-    let count = 1;
+    const line = [getCubeKey(row, col)];
 
     for (let i = 1; i < winCondition; i++) {
       const key = getCubeKey(row + dr * i, col + dc * i);
       if (board[key] === playerId) {
-        count++;
+        line.push(key);
       } else {
         break;
       }
@@ -108,16 +108,16 @@ export const checkWin = (row, col, playerId, board, winCondition) => {
     for (let i = 1; i < winCondition; i++) {
       const key = getCubeKey(row - dr * i, col - dc * i);
       if (board[key] === playerId) {
-        count++;
+        line.unshift(key);
       } else {
         break;
       }
     }
 
-    if (count >= winCondition) {
-      return true;
+    if (line.length >= winCondition) {
+      return { isWin: true, winningLine: line };
     }
   }
 
-  return false;
+  return { isWin: false, winningLine: [] };
 };

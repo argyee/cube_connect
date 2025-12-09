@@ -8,11 +8,18 @@ const GameControls = ({ onReset, onRandomBoard, onLeaveGame, debugMode, isOnline
     setShowConnectivityHints,
     turnTimerEnabled,
     setTurnTimerEnabled,
+    setTimerEnabledOnline,
     showPlayerCursors,
     setShowPlayerCursors,
+    playerSlot,
+    roomPlayers,
   } = useGame();
 
   const [showSettings, setShowSettings] = useState(false);
+
+  // Only allow timer control for host (slot 0) in online mode
+  const isHost = playerSlot === 0;
+  const canControlTimer = !isOnlineMode || isHost;
 
   return (
     <div className="flex items-center gap-2 flex-wrap">
@@ -85,16 +92,26 @@ const GameControls = ({ onReset, onRandomBoard, onLeaveGame, debugMode, isOnline
               <div className="flex items-center gap-2">
                 <Timer size={16} className={turnTimerEnabled ? 'text-blue-600' : 'text-slate-400'} />
                 <span className="text-sm text-slate-700">Turn Timer (60s)</span>
+                {isOnlineMode && !canControlTimer && (
+                  <span className="text-xs text-slate-500">(Host only)</span>
+                )}
               </div>
               <button
-                onClick={() => setTurnTimerEnabled(!turnTimerEnabled)}
+                onClick={() => {
+                  const newValue = !turnTimerEnabled;
+                  setTurnTimerEnabled(newValue);
+                  if (isOnlineMode) {
+                    setTimerEnabledOnline(newValue);
+                  }
+                }}
+                disabled={!canControlTimer}
                 className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
                   turnTimerEnabled ? 'bg-blue-600' : 'bg-slate-300'
-                }`}
+                } ${!canControlTimer ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
               >
                 <span
-                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                    turnTimerEnabled ? 'translate-x-6' : 'translate-x-1'
+                  className={`inline-block h-4 w-4 rounded-full bg-white transition-transform ${
+                    turnTimerEnabled ? 'translate-x-5' : 'translate-x-0.5'
                   }`}
                 />
               </button>

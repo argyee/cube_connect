@@ -60,6 +60,15 @@ const HomePage = () => {
       if (session && session.roomCode) {
         setSavedRoomSession(session);
         logger.info('✓ Saved room session found on menu load:', session);
+        
+        // Auto-reconnect only if NOT an intentional leave and game was active
+        if (!session.intentionalLeave && session.playerSlot !== null && session.playerSlot !== undefined) {
+          logger.info('Auto-reconnecting to active game:', {
+            roomCode: session.roomCode,
+            playerSlot: session.playerSlot
+          });
+          handleAutoReconnect(session);
+        }
       } else {
         logger.warn('✗ No saved room session found (or expired)');
         setSavedRoomSession(null);
@@ -67,27 +76,71 @@ const HomePage = () => {
     }
   }, [mode]); // Re-check whenever mode changes (when returning to menu)
 
+  const handleAutoReconnect = async (session) => {
+    setIsConnecting(true);
+    const timeoutId = setTimeout(() => {
+      setConnectionTimeout(true);
+      toast.info('Taking longer than expected to connect...');
+    }, 5000);
+
+    try {
+      // Connect socket first before attempting reconnect
+      await connectSocket();
+      await reconnectToGame(session.roomCode, session.playerSlot);
+      toast.success(`Reconnecting to game in room ${session.roomCode}...`);
+    } catch (error) {
+      logger.error('Auto-reconnect failed:', error);
+      toast.error('Could not reconnect to game. Please rejoin manually.');
+    } finally {
+      clearTimeout(timeoutId);
+      setIsConnecting(false);
+      setConnectionTimeout(false);
+    }
+  };
+
   // Also reload saved session when isInRoom becomes false (i.e., when leaving a room)
   useEffect(() => {
-    if (!isInRoom && mode === 'menu') {
+    if (!isInRoom) {
       logger.info('Player left room, checking for saved session...');
       const session = loadRoomSession();
+      
       if (session && session.roomCode) {
         setSavedRoomSession(session);
         logger.info('✓ Loaded saved room session after leaving room:', session);
+        
+        // Auto-reconnect only if NOT an intentional leave and game was active
+        if (!session.intentionalLeave && session.playerSlot !== null && session.playerSlot !== undefined) {
+          logger.info('Auto-reconnecting to active game after accidental disconnect:', {
+            roomCode: session.roomCode,
+            playerSlot: session.playerSlot
+          });
+          handleAutoReconnect(session);
+        } else if (session.intentionalLeave) {
+          // Intentional leave - keep session for manual rejoin button, but clear the flag
+          logger.info('Intentional leave detected. Keeping session for manual rejoin.');
+          const sessionForRejoin = { ...session, intentionalLeave: false };
+          setSavedRoomSession(sessionForRejoin);
+        }
       } else {
         logger.warn('✗ No saved session found after leaving room');
         setSavedRoomSession(null);
       }
     }
-  }, [isInRoom, mode]);
+  }, [isInRoom]);
 
-  // Navigate to lobby when room is created or joined
+  // Navigate to lobby when room is created or joined, or to game if reconnecting to active game
   useEffect(() => {
     if (isInRoom && roomCode) {
-      navigate(`/lobby/${roomCode}`);
+      // If we have a saved session with a playerSlot, we're reconnecting to an active game
+      if (savedRoomSession && savedRoomSession.playerSlot !== null && savedRoomSession.playerSlot !== undefined) {
+        logger.info('Navigating to game (reconnecting to active game)');
+        navigate('/game');
+      } else {
+        logger.info('Navigating to lobby (joining/creating room)');
+        navigate(`/lobby/${roomCode}`);
+      }
     }
-  }, [isInRoom, roomCode, navigate]);
+  }, [isInRoom, roomCode, savedRoomSession, navigate]);
 
   const handleStartLocal = (config) => {
     startLocalGame(config);
@@ -177,6 +230,8 @@ const HomePage = () => {
           roomCode: savedRoomSession.roomCode,
           playerSlot: savedRoomSession.playerSlot
         });
+        // Connect socket first before attempting reconnect
+        await connectSocket();
         await reconnectToGame(savedRoomSession.roomCode, savedRoomSession.playerSlot);
         toast.success(`Reconnecting to game in room ${savedRoomSession.roomCode}...`);
       } else {
@@ -190,9 +245,16 @@ const HomePage = () => {
       }
       // Navigation happens via useEffect watching isInRoom and roomCode
     } catch (error) {
-      logger.error('Failed to rejoin room:', error);
-      toast.error('Room no longer exists or is full. Please create or join a different room.');
-      setSavedRoomSession(null); // Clear saved session if rejoin fails
+      // Room no longer exists if all players have left - normal cleanup
+      if (error.message.includes('no longer exists') || error.message.includes('not found')) {
+        logger.info('Room expired (all players left). Clearing saved session.');
+        setSavedRoomSession(null);
+        toast.info('That game has ended. Start a new game or join another room.');
+      } else {
+        logger.error('Failed to rejoin room:', error);
+        toast.error('Could not rejoin. Please create or join a different room.');
+        // Don't clear savedRoomSession on other errors - let user retry or manually rejoin
+      }
     } finally {
       clearTimeout(timeoutId);
       setIsConnecting(false);

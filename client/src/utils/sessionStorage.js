@@ -29,7 +29,7 @@ export const clearSession = () => {
 };
 
 // Save room session (for rejoining)
-export const saveRoomSession = ({ roomCode, playerSlot, playerName, maxPlayers, cubesPerPlayer, winCondition }) => {
+export const saveRoomSession = ({ roomCode, playerSlot, playerName, maxPlayers, cubesPerPlayer, winCondition, intentionalLeave = false }) => {
   try {
     const roomSession = {
       roomCode,
@@ -38,6 +38,7 @@ export const saveRoomSession = ({ roomCode, playerSlot, playerName, maxPlayers, 
       maxPlayers,
       cubesPerPlayer,
       winCondition,
+      intentionalLeave,
       timestamp: Date.now() // Track when session was saved
     };
     localStorage.setItem('cubeConnectRoomSession', JSON.stringify(roomSession));
@@ -71,13 +72,14 @@ export const clearRoomSession = () => {
 };
 
 // Save game state (for recovery after refresh during game)
-export const saveGameState = ({ board, currentPlayer, players, winner, selectedCube, roomCode }) => {
+export const saveGameState = ({ board, currentPlayer, players, winner, winningLine, selectedCube, roomCode }) => {
   try {
     const gameState = {
       board,
       currentPlayer,
       players,
       winner,
+      winningLine,
       selectedCube,
       roomCode,
       timestamp: Date.now()

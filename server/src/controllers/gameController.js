@@ -136,6 +136,15 @@ export const handleMakeMove = (socket, io, { roomCode, row, col, selectedCube })
     return;
   }
 
+  // Handle turn timeout skip (row=-1, col=-1 is a special signal from client)
+  if (row === -1 && col === -1) {
+    logger.info(`Turn timeout skip in ${roomCode}: Player ${player.slot} (${player.name})`);
+    gameState.currentPlayer = (gameState.currentPlayer + 1) % gameState.players.length;
+    roomManager.updateGameState(roomCode, gameState);
+    io.to(roomCode).emit('gameStateUpdate', { gameState });
+    return;
+  }
+
   const key = getCubeKey(row, col);
   const playerId = gameState.players[gameState.currentPlayer].id;
   const isMovementPhase = gameState.players[gameState.currentPlayer].cubesLeft === 0;
@@ -156,9 +165,12 @@ export const handleMakeMove = (socket, io, { roomCode, row, col, selectedCube })
 
     if (moveResult.gameState) {
       gameState.board = moveResult.gameState.board;
-      gameState.players = moveResult.gameState.players;
       gameState.currentPlayer = moveResult.gameState.currentPlayer;
       gameState.winner = moveResult.gameState.winner;
+      gameState.winningLine = moveResult.gameState.winningLine || [];
+      if (moveResult.gameState.players) {
+        gameState.players = moveResult.gameState.players;
+      }
     }
   }
 
@@ -193,16 +205,17 @@ const handlePlacementMove = (gameState, row, col, key, playerId, socket) => {
   const newPlayers = [...gameState.players];
   newPlayers[gameState.currentPlayer].cubesLeft--;
 
-  const hasWon = checkWin(row, col, playerId, newBoard, gameState.winCondition);
-  const winner = hasWon ? gameState.players[gameState.currentPlayer] : null;
+  const { isWin, winningLine } = checkWin(row, col, playerId, newBoard, gameState.winCondition);
+  const winner = isWin ? gameState.players[gameState.currentPlayer] : null;
 
   return {
     valid: true,
     gameState: {
       board: newBoard,
       players: newPlayers,
-      currentPlayer: hasWon ? gameState.currentPlayer : (gameState.currentPlayer + 1) % gameState.players.length,
-      winner
+      currentPlayer: isWin ? gameState.currentPlayer : (gameState.currentPlayer + 1) % gameState.players.length,
+      winner,
+      winningLine: isWin ? winningLine : []
     }
   };
 };
@@ -231,15 +244,16 @@ const handleMovementMove = (gameState, key, playerId, selectedCube, socket) => {
     // Create the final board state with the moved cube
     const newBoard = { ...tempBoard, [key]: playerId };
 
-    const hasWon = checkWin(row, col, playerId, newBoard, gameState.winCondition);
-    const winner = hasWon ? gameState.players[gameState.currentPlayer] : null;
+    const { isWin, winningLine } = checkWin(row, col, playerId, newBoard, gameState.winCondition);
+    const winner = isWin ? gameState.players[gameState.currentPlayer] : null;
 
     return {
       valid: true,
       gameState: {
         board: newBoard,
-        currentPlayer: hasWon ? gameState.currentPlayer : (gameState.currentPlayer + 1) % gameState.players.length,
-        winner
+        currentPlayer: isWin ? gameState.currentPlayer : (gameState.currentPlayer + 1) % gameState.players.length,
+        winner,
+        winningLine: isWin ? winningLine : []
       }
     };
   } else {

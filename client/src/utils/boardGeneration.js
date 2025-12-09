@@ -1,5 +1,5 @@
 import { getCubeKey, parseCubeKey, getAdjacentPositions, isValidPosition } from './boardUtils.js';
-import { GRID_SIZE, PLAYERS_CONFIG } from './constants.js';
+import { GRID_SIZE, PLAYERS_CONFIG, INITIAL_CUBES } from './constants.js';
 import logger from './logger.js';
 
 /**
@@ -39,34 +39,42 @@ const wouldCreateWin = (row, col, playerId, testBoard, winCondition) => {
  * @param {number} winCondition - The win condition (4, 5, or 6)
  * @returns {Object} - Object with board and updated player states
  */
-export const generateRandomBoard = (winCondition) => {
+export const generateRandomBoard = (winCondition, players = [], cubesPerPlayerOverride = null) => {
   try {
+    const activePlayers = (players && players.length > 0 ? players : PLAYERS_CONFIG).map(p => ({ ...p }));
     const newBoard = {};
-    const cubesPerPlayer = Math.floor(Math.random() * 8) + 5; // 5-12 cubes per player
+
+    // Target ~80% of each player's available cubes so movement phase is quickly reachable
+    const targetFillRatio = 0.8;
+    const targetPerPlayer = {};
+    const playerCubeCount = {};
+
+    activePlayers.forEach(p => {
+      const maxCubes = cubesPerPlayerOverride ?? p.cubesLeft ?? INITIAL_CUBES;
+      targetPerPlayer[p.id] = Math.max(1, Math.round(maxCubes * targetFillRatio));
+      playerCubeCount[p.id] = 0;
+    });
+
+    const totalTarget = Object.values(targetPerPlayer).reduce((sum, val) => sum + val, 0);
     const centerRow = Math.floor(GRID_SIZE / 2);
     const centerCol = Math.floor(GRID_SIZE / 2);
 
     // Place the first cube at center for player 0
     const firstKey = getCubeKey(centerRow, centerCol);
-    newBoard[firstKey] = PLAYERS_CONFIG[0].id;
-
-    // Track cube counts for each player
-    const playerCubeCount = {};
-    PLAYERS_CONFIG.forEach(p => {
-      playerCubeCount[p.id] = p.id === PLAYERS_CONFIG[0].id ? 1 : 0;
-    });
+    newBoard[firstKey] = activePlayers[0].id;
+    playerCubeCount[activePlayers[0].id] = 1;
 
     // Keep placing cubes until all players have their target amount
     let totalPlaced = 1;
     const maxAttempts = 1000;
     let globalAttempts = 0;
 
-    while (totalPlaced < cubesPerPlayer * 3 && globalAttempts < maxAttempts) {
+    while (totalPlaced < totalTarget && globalAttempts < maxAttempts) {
       globalAttempts++;
 
       // Pick a random player who hasn't reached their limit
-      const playersNeedingCubes = PLAYERS_CONFIG.filter(
-        p => playerCubeCount[p.id] < cubesPerPlayer
+      const playersNeedingCubes = activePlayers.filter(
+        p => playerCubeCount[p.id] < targetPerPlayer[p.id]
       );
 
       if (playersNeedingCubes.length === 0) break;
@@ -107,18 +115,19 @@ export const generateRandomBoard = (winCondition) => {
     }
 
     // Update player cube counts
-    const updatedPlayers = PLAYERS_CONFIG.map(player => {
+    const updatedPlayers = activePlayers.map(player => {
       const placedCubes = playerCubeCount[player.id] || 0;
+      const maxCubes = cubesPerPlayerOverride ?? player.cubesLeft ?? INITIAL_CUBES;
       return {
         ...player,
-        cubesLeft: Math.max(0, 14 - placedCubes)
+        cubesLeft: Math.max(0, maxCubes - placedCubes)
       };
     });
 
-    logger.debug(`Board generation complete: ${totalPlaced} cubes placed in ${globalAttempts} attempts, ${cubesPerPlayer} per player`);
+    logger.debug(`Board generation complete: ${totalPlaced} cubes placed in ${globalAttempts} attempts (~${Math.round(targetFillRatio * 100)}% of available cubes per player)`);
     return { board: newBoard, players: updatedPlayers };
   } catch (error) {
     logger.error('Error generating random board', { winCondition, error: error.message });
-    return { board: {}, players: PLAYERS_CONFIG };
+    return { board: {}, players: players && players.length > 0 ? players : PLAYERS_CONFIG };
   }
 };

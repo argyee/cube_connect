@@ -65,3 +65,28 @@ body {
 .animate-slide-in-right {
   animation: slide-in-right 0.3s ease-out;
 }
+
+/* Emote animations */
+@keyframes emote-slide-in {
+  from {
+    transform: translateX(100px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes emote-fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+.emote-animation {
+  animation: emote-slide-in 0.3s ease-out, emote-fade-out 0.5s ease-in 2.5s forwards;
+}

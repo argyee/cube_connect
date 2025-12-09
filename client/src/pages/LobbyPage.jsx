@@ -56,6 +56,13 @@ const LobbyPage = () => {
     // (which means game was started, not just in lobby)
     const savedRoomSession = loadRoomSession();
     
+    // If intentional leave, don't auto-rejoin - user should use manual rejoin button
+    if (savedRoomSession?.intentionalLeave) {
+      logger.info('Intentional leave detected in LobbyPage, skipping auto-rejoin');
+      navigate('/');
+      return;
+    }
+    
     // If we have a code in URL params but no saved session, just navigate home
     // This prevents rejoining rooms that were never started (e.g., after refresh in lobby)
     if (code && !savedRoomSession?.roomCode) {
