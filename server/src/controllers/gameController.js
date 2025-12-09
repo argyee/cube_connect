@@ -8,6 +8,43 @@ import {
   checkWin
 } from '../utils/gameLogic.js';
 
+export const handleResetGame = (socket, io, { roomCode }) => {
+  const room = roomManager.getRoom(roomCode);
+  if (!room) {
+    socket.emit('error', { message: 'Room not found' });
+    return;
+  }
+
+  // Only allow host (player slot 0) to reset
+  const playerSlot = room.players.findIndex(p => p?.socketId === socket.id);
+  if (playerSlot !== 0) {
+    socket.emit('error', { message: 'Only the host can reset the game' });
+    return;
+  }
+
+  // Reset game state but preserve room and players
+  // Keep gameStarted = true to avoid going back to lobby
+  const freshPlayers = room.players.map(p => ({
+    ...p,
+    cubesLeft: room.cubesPerPlayer
+  }));
+
+  room.gameState = {
+    board: {},
+    currentPlayer: 0,
+    players: freshPlayers,
+    moveCount: 0,
+    winCondition: room.winCondition
+  };
+
+  logger.info(`Game reset in room ${roomCode} by host`);
+
+  // Broadcast fresh game state to all players
+  io.to(roomCode).emit('gameReset', {
+    gameState: room.gameState
+  });
+};
+
 export const handleCreateRoom = (socket, { winCondition, playerCount, cubesPerPlayer, playerName }) => {
   logger.info(`Create room request: win=${winCondition}, players=${playerCount}, cubes=${cubesPerPlayer}`);
   const room = roomManager.createRoom(winCondition, playerCount, cubesPerPlayer);
@@ -158,6 +195,11 @@ export const handleMakeMove = (socket, io, { roomCode, row, col, selectedCube })
       gameState.board = moveResult.gameState.board;
       gameState.currentPlayer = moveResult.gameState.currentPlayer;
       gameState.winner = moveResult.gameState.winner;
+      gameState.winningLine = moveResult.gameState.winningLine || [];
+      gameState.selectedCube = moveResult.gameState.selectedCube || null;
+      if (moveResult.gameState.players) {
+        gameState.players = moveResult.gameState.players;
+      }
     }
   } else {
     const moveResult = handlePlacementMove(gameState, row, col, key, playerId, socket);
@@ -179,6 +221,9 @@ export const handleMakeMove = (socket, io, { roomCode, row, col, selectedCube })
   // Update room state
   roomManager.updateGameState(roomCode, gameState);
 
+  // Log current game state for debugging
+  logger.debug(`After move - roomCode=${roomCode}, currentPlayer=${gameState.currentPlayer}, players.length=${gameState.players.length}, board keys=${Object.keys(gameState.board).length}`);
+
   // Broadcast updated game state to all players
   io.to(roomCode).emit('gameStateUpdate', { gameState });
 
@@ -194,6 +239,10 @@ const handlePlacementMove = (gameState, row, col, key, playerId, socket) => {
   }
 
   const isFirstCubeOfGame = Object.keys(gameState.board).length === 0;
+  
+  // Debug log to check board state
+  logger.debug(`Placement check: row=${row}, col=${col}, key=${key}, boardKeys=${JSON.stringify(Object.keys(gameState.board))}`);
+  
   if (!isFirstCubeOfGame && !touchesAnyCube(row, col, gameState.board)) {
     socket.emit('invalidMove', {
       message: 'Must touch an existing cube (horizontally or vertically)'
@@ -251,20 +300,29 @@ const handleMovementMove = (gameState, key, playerId, selectedCube, socket) => {
       valid: true,
       gameState: {
         board: newBoard,
+        players: gameState.players,
         currentPlayer: isWin ? gameState.currentPlayer : (gameState.currentPlayer + 1) % gameState.players.length,
         winner,
-        winningLine: isWin ? winningLine : []
+        winningLine: isWin ? winningLine : [],
+        selectedCube: null
       }
     };
   } else {
     if (gameState.board[key] === playerId) {
-      if (!canMoveCube(key, playerId, gameState.board)) {
-        socket.emit('invalidMove', {
-          message: 'Cannot move this cube - would break connectivity!'
-        });
-        return { valid: false };
-      }
-      return { valid: true };
+      // Just selecting a cube - no need to validate connectivity yet
+      // Connectivity is only checked when the move is actually executed (destination clicked)
+      // Return with updated selectedCube in gameState
+      return {
+        valid: true,
+        gameState: {
+          board: gameState.board,
+          players: gameState.players,
+          currentPlayer: gameState.currentPlayer,
+          winner: gameState.winner,
+          winningLine: gameState.winningLine || [],
+          selectedCube: key
+        }
+      };
     } else if (gameState.board[key]) {
       socket.emit('invalidMove', { message: "That's not your cube!" });
       return { valid: false };

@@ -25,25 +25,24 @@ const LobbyPage = () => {
   const [isMounted, setIsMounted] = useState(true);
 
   useEffect(() => {
-    // Mark that component is mounted
     setIsMounted(true);
+    logger.debug('LobbyPage', 'Component mounted');
     
     return () => {
-      // Mark that component is unmounted
       setIsMounted(false);
+      logger.debug('LobbyPage', 'Component unmounted');
     };
   }, []);
 
   useEffect(() => {
-    // If user is already in a room that matches the param code, don't need to rejoin
     if (isInRoom && roomCode === code) {
+      logger.debug('LobbyPage', 'Already in matching room', { roomCode, code });
       setRejoinError(null);
       return;
     }
 
-    // Only attempt rejoin once per code param
     if (hasAttemptedRejoin && roomCode !== code) {
-      // Code changed (user navigated to different room), reset flag
+      logger.debug('LobbyPage', 'Room code changed, resetting rejoin flag', { oldCode: roomCode, newCode: code });
       setHasAttemptedRejoin(false);
       return;
     }
@@ -52,21 +51,10 @@ const LobbyPage = () => {
       return;
     }
 
-    // Check if this is a rejoin attempt - only rejoin if we have a saved session
-    // (which means game was started, not just in lobby)
     const savedRoomSession = loadRoomSession();
     
-    // If intentional leave, don't auto-rejoin - user should use manual rejoin button
-    if (savedRoomSession?.intentionalLeave) {
-      logger.info('Intentional leave detected in LobbyPage, skipping auto-rejoin');
-      navigate('/');
-      return;
-    }
-    
-    // If we have a code in URL params but no saved session, just navigate home
-    // This prevents rejoining rooms that were never started (e.g., after refresh in lobby)
     if (code && !savedRoomSession?.roomCode) {
-      logger.info('Room code in URL but no saved session - redirecting to home');
+      logger.info('LobbyPage', 'Room code in URL but no saved session, redirecting to home', { code });
       navigate('/');
       return;
     }
@@ -74,12 +62,13 @@ const LobbyPage = () => {
     const codeFromParams = savedRoomSession?.roomCode;
 
     if (!codeFromParams) {
+      logger.info('LobbyPage', 'No room code available, redirecting to home');
       navigate('/');
       return;
     }
 
-    // Attempt to rejoin room
     const attemptRejoin = async () => {
+      logger.info('LobbyPage', 'Attempting to rejoin room', { roomCode: codeFromParams });
       setIsRejoining(true);
       setRejoinError(null);
       setHasAttemptedRejoin(true);
@@ -87,9 +76,9 @@ const LobbyPage = () => {
         await connectSocket();
         const playerName = savedRoomSession?.playerName || null;
         await joinRoom(codeFromParams, playerName);
+        logger.info('LobbyPage', 'Successfully rejoined room', { roomCode: codeFromParams });
       } catch (error) {
-        logger.warn('Failed to rejoin room:', error);
-        // Only update state if component is still mounted
+        logger.warn('LobbyPage', 'Failed to rejoin room', { roomCode: codeFromParams, error: error.message });
         if (!isMounted) return;
         
         // Determine error message based on error type
@@ -105,10 +94,9 @@ const LobbyPage = () => {
         displayMessage += 'Redirecting to home...';
         setRejoinError(displayMessage);
         
-        // Clear saved session on failed rejoin and go home
+        logger.info('LobbyPage', 'Clearing session and redirecting after rejoin failure', { error: errorMsg });
         clearRoomSession();
         
-        // Disconnect socket to stop reconnection attempts
         if (socket) {
           socket.disconnect();
         }
@@ -127,8 +115,8 @@ const LobbyPage = () => {
   }, [code, isInRoom, roomCode, joinRoom, connectSocket, navigate, hasAttemptedRejoin, isMounted]);
 
   useEffect(() => {
-    // If game has started, navigate to game page
     if (gameStarted && isOnlineMode) {
+      logger.info('LobbyPage', 'Game started, navigating to game page', { roomCode });
       navigate(`/game/${roomCode}`);
     }
   }, [gameStarted, isOnlineMode, roomCode, navigate]);

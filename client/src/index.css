@@ -1,3 +1,23 @@
+/* Fancier cube-inspired button styles */
+/* Textured button inspired by favicon cube */
+.textured-btn {
+  background-image:
+    repeating-linear-gradient(135deg, rgba(255,255,255,0.08) 0px, rgba(255,255,255,0.08) 2px, transparent 2px, transparent 8px),
+    repeating-linear-gradient(45deg, rgba(255,255,255,0.10) 0px, rgba(255,255,255,0.10) 2px, transparent 2px, transparent 8px);
+  box-shadow:
+    0 2px 8px 0 rgba(30,64,175,0.10),
+    0 1.5px 0 0 rgba(255,255,255,0.12) inset,
+    0 0.5px 0 0 rgba(0,0,0,0.10) inset;
+  border-radius: 0.75rem;
+  position: relative;
+}
+.textured-btn:active {
+  box-shadow:
+    0 1px 4px 0 rgba(30,64,175,0.10),
+    0 0.5px 0 0 rgba(255,255,255,0.10) inset,
+    0 0.5px 0 0 rgba(0,0,0,0.12) inset;
+  transform: translateY(1px) scale(0.98);
+}
 @tailwind base;
 @tailwind components;
 @tailwind utilities;

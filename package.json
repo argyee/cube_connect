@@ -4,10 +4,13 @@
   "description": "A multiplayer strategy board game with online play",
   "scripts": {
     "install:all": "npm install --prefix client && npm install --prefix server",
+    "install:client": "npm install --prefix client",
+    "install:server": "npm install --prefix server",
     "dev:client": "npm run dev --prefix client",
     "dev:server": "npm run dev --prefix server",
     "build:client": "npm run build --prefix client",
     "start:server": "npm start --prefix server",
+    "test:server": "npm test --prefix server",
     "docker:build": "docker build -t cube-connect:latest .",
     "docker:up": "docker-compose up -d",
     "docker:down": "docker-compose down",
