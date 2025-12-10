@@ -164,6 +164,15 @@ const Game = () => {
     
     if (selectedCube) {
       logger.debug('Game', 'Moving cube', { from: selectedCube, to: key });
+
+      // In online mode, do not mutate local board; rely on server validation/broadcast
+      if (isOnlineMode) {
+        makeMove(row, col, selectedCube);
+        setSelectedCube(null);
+        setDisconnectedCubes([]);
+        return;
+      }
+
       if (board[key] !== undefined) {
         logger.debug('Game', 'Destination occupied', { key, value: board[key] });
         showToast('Cannot move to occupied square', 'error');
@@ -207,11 +216,6 @@ const Game = () => {
         type: 'move'
       }]);
 
-      // In online mode, also send to server (server will validate and broadcast)
-      if (isOnlineMode) {
-        makeMove(row, col, selectedCube);
-      }
-
       const { isWin, winningLine: line } = checkWin(row, col, playerId, newBoard, winCondition);
       if (isWin) {
         setWinner(players[currentPlayer]);
@@ -224,16 +228,18 @@ const Game = () => {
       setCurrentPlayer((currentPlayer + 1) % players.length);
     } else {
       if (board[key] === playerId) {
-        // In online mode, skip client-side connectivity check - server will validate
-        if (!isOnlineMode && !canMoveCube(key, playerId, board)) {
-          // Show disconnected cubes if hints are enabled
-          if (showConnectivityHints) {
-            const disconnected = getDisconnectedCubes(key, playerId, board);
-            setDisconnectedCubes(disconnected);
+        if (!isOnlineMode) {
+          // Offline: block selection if moving would break connectivity
+          if (!canMoveCube(key, playerId, board)) {
+            if (showConnectivityHints) {
+              const disconnected = getDisconnectedCubes(key, playerId, board);
+              setDisconnectedCubes(disconnected);
+            }
+            showToast('Cannot move this cube - would break connectivity!', 'error');
+            return;
           }
-          showToast('Cannot move - would break connectivity!', 'error');
-          return;
         }
+        // Online: allow selection; server will validate on move
         setSelectedCube(key);
         setDisconnectedCubes([]);
       } else if (board[key] !== undefined) {

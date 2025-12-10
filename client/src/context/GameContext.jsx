@@ -301,8 +301,29 @@ export const GameProvider = ({ children }) => {
       // Check if turn is changing by comparing board state - if it's different, a move was made
       const boardChanged = JSON.stringify(gameState.board) !== JSON.stringify(board);
       
+      logger.debug('GameContext', 'Received gameStateUpdate', {
+        currentPlayer: gameState.currentPlayer,
+        playersLength: gameState.players?.length,
+        selectedCube: gameState.selectedCube,
+        boardSize: Object.keys(gameState.board).length
+      });
+      
       setBoard(gameState.board);
-      setCurrentPlayer(gameState.currentPlayer);
+      // Defensive: if server currentPlayer is out of range, fallback to 0
+      const safeCurrent =
+        typeof gameState.currentPlayer === 'number' &&
+        gameState.players &&
+        gameState.currentPlayer >= 0 &&
+        gameState.currentPlayer < gameState.players.length
+          ? gameState.currentPlayer
+          : 0;
+      if (safeCurrent !== gameState.currentPlayer) {
+        logger.warn('GameContext', 'Adjusting invalid currentPlayer from server', {
+          serverCurrentPlayer: gameState.currentPlayer,
+          playersLength: gameState.players?.length
+        });
+      }
+      setCurrentPlayer(safeCurrent);
       setPlayers(gameState.players);
       
       // Update selectedCube from server (either set during selection or cleared after move)

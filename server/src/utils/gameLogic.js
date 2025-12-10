@@ -55,18 +55,21 @@ export const checkConnectivity = (playerId, board, excludeKey = null) => {
 };
 
 export const canMoveCube = (cubeKey, playerId, board) => {
+  // Simulate removing the cube
   const tempBoard = { ...board };
   delete tempBoard[cubeKey];
-  const remainingCubes = Object.entries(tempBoard)
-    .filter(([k, val]) => val === playerId)
-    .map(([k]) => k);
+  
+  // Get ALL remaining cubes on the board (not just current player's)
+  const allRemainingCubes = Object.keys(tempBoard);
 
-  if (remainingCubes.length <= 1) return true;
+  // If 0 or 1 cubes remain, no connectivity issue
+  if (allRemainingCubes.length <= 1) return true;
 
-  const remainingSet = new Set(remainingCubes);
+  // Check if ALL remaining cubes stay in one connected network
+  const remainingSet = new Set(allRemainingCubes);
   const visited = new Set();
-  const queue = [remainingCubes[0]];
-  visited.add(remainingCubes[0]);
+  const queue = [allRemainingCubes[0]];
+  visited.add(allRemainingCubes[0]);
 
   while (queue.length > 0) {
     const current = queue.shift();
@@ -82,6 +85,7 @@ export const canMoveCube = (cubeKey, playerId, board) => {
     }
   }
 
+  // All cubes must be reachable from the starting cube
   return visited.size === remainingSet.size;
 };
 

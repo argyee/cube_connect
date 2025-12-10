@@ -22,10 +22,26 @@ const Lobby = () => {
 
   const [copied, setCopied] = React.useState(false);
 
-  const handleCopyCode = () => {
-    navigator.clipboard.writeText(roomCode);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const handleCopyCode = async () => {
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(roomCode);
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = roomCode;
+        textarea.setAttribute('readonly', '');
+        textarea.style.position = 'absolute';
+        textarea.style.left = '-9999px';
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+      }
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy room code', err);
+    }
   };
 
   // Clear session when leaving lobby

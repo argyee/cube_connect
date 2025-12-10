@@ -56,18 +56,18 @@ export const canMoveCube = (cubeKey, playerId, board) => {
     const tempBoard = { ...board };
     delete tempBoard[cubeKey];
 
-    // Filter to only this player's cubes
-    const playerCubes = Object.keys(tempBoard).filter(key => tempBoard[key] === playerId);
+    // Get ALL remaining cubes on the board (not just current player's)
+    const allRemainingCubes = Object.keys(tempBoard);
 
     // Empty or single cube is always connected
-    if (playerCubes.length <= 1) return true;
+    if (allRemainingCubes.length <= 1) return true;
 
-    // Check if ALL of this player's remaining cubes stay in one connected network
-    const reachableCubes = findReachableCubes(playerCubes, tempBoard);
-    const canMove = reachableCubes.size === playerCubes.length;
+    // Check if ALL remaining cubes stay in one connected network
+    const reachableCubes = findReachableCubes(allRemainingCubes, tempBoard);
+    const canMove = reachableCubes.size === allRemainingCubes.length;
     
     if (!canMove) {
-      logger.debug('Connectivity', 'Move rejected - would break player connectivity', { cubeKey, playerId, reachable: reachableCubes.size, total: playerCubes.length });
+      logger.debug('Connectivity', 'Move rejected - would break board connectivity', { cubeKey, reachable: reachableCubes.size, total: allRemainingCubes.length });
     }
     
     return canMove;

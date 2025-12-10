@@ -200,6 +200,7 @@ export const handleMakeMove = (socket, io, { roomCode, row, col, selectedCube })
       if (moveResult.gameState.players) {
         gameState.players = moveResult.gameState.players;
       }
+      logger.debug(`Movement phase update - currentPlayer=${gameState.currentPlayer}, selectedCube=${gameState.selectedCube}`);
     }
   } else {
     const moveResult = handlePlacementMove(gameState, row, col, key, playerId, socket);
@@ -217,6 +218,12 @@ export const handleMakeMove = (socket, io, { roomCode, row, col, selectedCube })
   }
 
   logger.debug(`Move in ${roomCode}: [${row}, ${col}] by player ${player.slot}`);
+
+  // Normalize currentPlayer in case of any desync (should never exceed players length)
+  if (gameState.players && gameState.players.length > 0) {
+    gameState.currentPlayer = gameState.currentPlayer % gameState.players.length;
+    if (gameState.currentPlayer < 0) gameState.currentPlayer = 0;
+  }
 
   // Update room state
   roomManager.updateGameState(roomCode, gameState);
@@ -271,8 +278,22 @@ const handlePlacementMove = (gameState, row, col, key, playerId, socket) => {
 
 const handleMovementMove = (gameState, key, playerId, selectedCube, socket) => {
   if (selectedCube) {
+    // Ensure the selected cube still exists and belongs to current player
+    if (gameState.board[selectedCube] !== playerId) {
+      socket.emit('invalidMove', { message: 'Selected cube is no longer valid' });
+      return { valid: false };
+    }
+
     if (gameState.board[key]) {
       socket.emit('invalidMove', { message: 'Cannot move to occupied square' });
+      return { valid: false };
+    }
+
+    // Validate that the selected cube can be moved (doesn't break connectivity)
+    if (!canMoveCube(selectedCube, playerId, gameState.board)) {
+      socket.emit('invalidMove', {
+        message: 'Cannot move this cube - would break connectivity!'
+      });
       return { valid: false };
     }
 
@@ -309,8 +330,14 @@ const handleMovementMove = (gameState, key, playerId, selectedCube, socket) => {
     };
   } else {
     if (gameState.board[key] === playerId) {
-      // Just selecting a cube - no need to validate connectivity yet
-      // Connectivity is only checked when the move is actually executed (destination clicked)
+      // Selecting a cube: validate connectivity before allowing pick-up
+      if (!canMoveCube(key, playerId, gameState.board)) {
+        socket.emit('invalidMove', {
+          message: 'Cannot move this cube - would break connectivity!'
+        });
+        return { valid: false };
+      }
+
       // Return with updated selectedCube in gameState
       return {
         valid: true,
